@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KI-Challenge – Überzeuge die KI</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <header>
+    <h1>KI-Challenge</h1>
+    <p>Überzeuge die KI, dir die Lösung zu verraten. Jede Frage zählt.</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+        <div>
+          <h2>HiggsBo – Autonomes Reasoning Interface Agent</h2>
+          <p class="small-note">Gestellte Fragen gesamt: <strong id="questionCount">0</strong></p>
+        </div>
+        <a class="button-link" href="index.html" style="font-size:0.9rem; padding:0.6rem 1rem;">← Zurück</a>
+      </div>
+
+      <div id="chatLog" class="task-list" style="margin-top:18px; max-height:420px; overflow-y:auto;"></div>
+
+      <form id="aiChatForm" class="admin-box" style="margin-top:16px;">
+        <label for="aiInput">Deine Nachricht an HiggsBo</label>
+        <textarea id="aiInput" placeholder="Schreibe hier deine Überzeugungsversuche..." rows="3"></textarea>
+        <button type="submit">Senden</button>
+      </form>
+    </section>
+
+    <section class="card" id="solutionReveal" style="display:none;">
+      <h2 style="color:#3fe58d;">🎉 Lösung erhalten!</h2>
+      <div class="solution-box">
+        <p id="solutionText" style="font-size:1.1rem; font-weight:600;"></p>
+      </div>
+      <p class="small-note" style="margin-top:12px;">Gib diese Lösung im Aufgaben-Formular auf der Hauptseite ein.</p>
+      <a class="button-link" href="index.html" style="margin-top:16px; display:inline-flex;">Zur Aufgabenübersicht</a>
+    </section>
+  </main>
+
+  <footer class="footer-note">Die KI lässt sich nicht so leicht überzeugen…</footer>
+  <script src="aichat.js"></script>
+</body>
+</html>

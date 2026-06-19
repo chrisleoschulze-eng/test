@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Community Chat</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <header>
+    <h1>Community Chat</h1>
+    <p>Registriere dich mit Benutzername und Passwort. Neue Nutzer muessen erst vom Admin bestaetigt werden.</p>
+  </header>
+
+  <main>
+    <section class="grid layout-grid admin-grid" id="authArea">
+      <div class="card admin-box">
+        <h2>Registrieren</h2>
+        <form id="registerForm">
+          <label for="registerUsername">Benutzername</label>
+          <input type="text" id="registerUsername" placeholder="Benutzername" required />
+          <label for="registerPassword">Passwort</label>
+          <input type="password" id="registerPassword" placeholder="Passwort" required />
+          <label for="registerColor">Deine Namensfarbe im Chat</label>
+          <div style="display:flex; align-items:center; gap:12px;">
+            <input type="color" id="registerColor" value="#7dd0ff" style="width:48px; height:38px; border:none; border-radius:8px; cursor:pointer; background:none;" />
+            <span class="small-note" id="registerColorPreview" style="font-weight:600;">Vorschau</span>
+          </div>
+          <button type="submit">Registrierung senden</button>
+        </form>
+      </div>
+
+      <div class="card admin-box">
+        <h2>Anmelden</h2>
+        <form id="loginForm">
+          <label for="loginUsername">Benutzername</label>
+          <input type="text" id="loginUsername" placeholder="Benutzername" required />
+          <label for="loginPassword">Passwort</label>
+          <input type="password" id="loginPassword" placeholder="Passwort" required />
+          <button type="submit">Anmelden</button>
+        </form>
+      </div>
+    </section>
+
+    <section class="card" id="chatArea" style="display:none;">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+        <div>
+          <h2 id="chatHeadline">Chat</h2>
+          <p class="small-note">Dateien koennen mitgesendet werden. Bilder werden direkt angezeigt.</p>
+        </div>
+        <button class="secondary" id="logoutChatButton">Abmelden</button>
+      </div>
+
+      <div id="chatMessageList" class="task-list" style="margin-top:16px;"></div>
+
+      <form id="chatForm" class="admin-box" style="margin-top:16px;">
+        <label for="chatMessage">Nachricht</label>
+        <textarea id="chatMessage" placeholder="Schreibe eine Nachricht..."></textarea>
+        <div class="file-input-wrapper">
+          <label for="chatFileInput">Datei hochladen (optional)</label>
+          <input type="file" id="chatFileInput" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.txt,.md" />
+        </div>
+        <button type="submit">Senden</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Navigation</h2>
+      <div class="actions">
+        <a class="button-link" href="index.html">Zur Aufgaben-Seite</a>
+        <a class="button-link" href="admin.html">Zum Admin-Dashboard</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer-note">Der Chat synchronisiert sich ueber Supabase zwischen Geraeten.</footer>
+
+  <script>
+    const colorInput = document.getElementById('registerColor');
+    const colorPreview = document.getElementById('registerColorPreview');
+    if (colorInput && colorPreview) {
+      function updatePreview() {
+        colorPreview.style.color = colorInput.value;
+        colorPreview.textContent = 'Dein Name sieht so aus';
+      }
+      colorInput.addEventListener('input', updatePreview);
+      updatePreview();
+    }
+  </script>
+  <script src="chat.js"></script>
+</body>
+</html>
