@@ -1,8 +1,9 @@
-﻿if (!window.__ksScriptLoaded) {
+if (!window.__ksScriptLoaded) {
   window.__ksScriptLoaded = true;
   (function() {
     const STORAGE_TASKS = 'ks_tasks';
     const STORAGE_TIP = 'ks_tip';
+    const STORAGE_ADMIN_PASSWORD = 'ks_admin_password';
     const SUPABASE_URL = 'https://gpsnklnubbqkntseqeqb.supabase.co';
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdwc25rbG51YmJxa250c2VxZXFiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MDQyNjgsImV4cCI6MjA5NzM4MDI2OH0.VICqdMCm4mknyBIoTdYbH-tQ7g408gpKl_zlVHPp7z4';
     const ADMIN_PASSWORD = 'Chemtrail42';
@@ -150,6 +151,7 @@ const state = {
   tasks: [],
   tip: null,
   adminLoggedIn: false,
+  adminPassword: ADMIN_PASSWORD,
   currentTaskId: null,
   currentMode: 'submit'
 };
@@ -209,7 +211,8 @@ function normalizeTask(task) {
     solution: task.solution || '',
     solvedAt: task.solvedAt || task.solvedat || null,
     taskFileName: task.taskFileName || task.taskfilename || '',
-    solutionFileName: task.solutionFileName || task.solutionfilename || ''
+    solutionFileName: task.solutionFileName || task.solutionfilename || '',
+    solutionFileData: task.solutionFileData || task.solutionfiledata || ''
   };
 }
 
@@ -233,7 +236,8 @@ function normalizeTaskForDb(task) {
     solution: task.solution,
     solvedat: task.solvedAt,
     taskfilename: task.taskFileName,
-    solutionfilename: task.solutionFileName
+    solutionfilename: task.solutionFileName,
+    solutionfiledata: task.solutionFileData
   };
 }
 
@@ -260,6 +264,33 @@ function normalizeAnswer(value, options = {}) {
   return result;
 }
 
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Datei konnte nicht gelesen werden.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function dataUrlToBlob(dataUrl) {
+  const parts = String(dataUrl || '').split(',');
+  if (parts.length < 2) throw new Error('Ungueltiges Dateiformat.');
+
+  const meta = parts[0];
+  const base64 = parts.slice(1).join(',');
+  const mimeMatch = meta.match(/data:(.*?);base64/);
+  const mimeType = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+
+  return new Blob([bytes], { type: mimeType });
+}
+
 function mergeDefaultTasks(existingTasks) {
   const normalizedExisting = existingTasks.map(normalizeTask);
   const existingIds = new Set(normalizedExisting.map(task => task.id));
@@ -273,6 +304,7 @@ function mergeDefaultTasks(existingTasks) {
 async function loadState() {
   const adminState = localStorage.getItem('ks_admin_logged_in');
   state.adminLoggedIn = adminState === 'true';
+  state.adminPassword = localStorage.getItem(STORAGE_ADMIN_PASSWORD) || ADMIN_PASSWORD;
 
   if (!supabase) {
     const tasksFromStorage = localStorage.getItem(STORAGE_TASKS);
@@ -395,6 +427,10 @@ function setupRealtimeSync() {
 
 function saveAdminState() {
   localStorage.setItem('ks_admin_logged_in', state.adminLoggedIn ? 'true' : 'false');
+}
+
+function saveAdminPassword(password) {
+  localStorage.setItem(STORAGE_ADMIN_PASSWORD, password);
 }
 
 function displayStorageInfo() {
@@ -534,7 +570,7 @@ function renderSolved() {
       <header>
         <div>
           <h3>${task.title}</h3>
-          <span class="tag">Erledigt</span>
+          <span class="status-pill success">Erfolgreich abgeschlossen</span>
         </div>
         <button class="secondary" data-action="view" data-id="${task.id}">Lösung ansehen</button>
       </header>
@@ -584,7 +620,6 @@ function renderAdminContent() {
           <input type="password" id="adminPassword" placeholder="Passwort eingeben" />
           <button type="submit">Admin einloggen</button>
         </form>
-        <p class="small-note">Passwort: <strong>Chemtrail42</strong></p>
       </div>
     `;
     return;
@@ -613,6 +648,12 @@ function renderAdminContent() {
         <div class="file-meta"><strong>${publishInfo}</strong></div>
         <div class="file-meta"><strong>Prüfmodus:</strong> ${validationText}</div>
         ${task.tipText ? `<div class="file-meta"><strong>Mittwochstipp:</strong> ${task.tipText}</div>` : ''}
+        ${task.solutionFileName ? `<div class="file-meta"><strong>Eingereichte Datei:</strong> ${task.solutionFileName}</div>` : ''}
+        <div class="actions">
+          ${task.solutionFileData ? `<button class="secondary" data-action="open-file" data-id="${task.id}">Datei öffnen</button>` : ''}
+          <button class="secondary" data-action="edit-task" data-id="${task.id}">Bearbeiten</button>
+          <button class="danger" data-action="delete-task" data-id="${task.id}">Löschen</button>
+        </div>
       </article>
     `;
   }).join('');
@@ -629,6 +670,7 @@ function renderAdminContent() {
 
       <div class="admin-box">
         <form id="taskForm">
+          <input type="hidden" id="editingTaskId" />
           <label for="taskTitle">Neue Aufgabe hinzufügen</label>
           <input type="text" id="taskTitle" placeholder="Titel der Aufgabe" />
           <input type="text" id="taskCategory" placeholder="Kategorie (z. B. Fitness, Soziales)" />
@@ -654,12 +696,27 @@ function renderAdminContent() {
             <label><input type="checkbox" id="caseSensitive" /> Groß-/Kleinschreibung beachten</label>
             <label><input type="checkbox" id="whitespaceSensitive" /> Leerzeichen beachten</label>
           </div>
-          <button type="submit">Aufgabe hinzufügen</button>
+          <div class="actions">
+            <button type="submit" id="taskSubmitButton">Aufgabe hinzufügen</button>
+            <button type="button" class="secondary" id="cancelTaskEdit" data-action="cancel-task-edit" style="display:none;">Bearbeitung abbrechen</button>
+          </div>
         </form>
       </div>
 
       <div class="admin-box">
         <button id="logoutButton" class="danger">Admin abmelden</button>
+      </div>
+
+      <div class="admin-box">
+        <form id="adminPasswordForm">
+          <label for="currentAdminPassword">Aktuelles Passwort</label>
+          <input type="password" id="currentAdminPassword" placeholder="Aktuelles Passwort" />
+          <label for="newAdminPassword">Neues Passwort</label>
+          <input type="password" id="newAdminPassword" placeholder="Neues Passwort" />
+          <label for="confirmAdminPassword">Neues Passwort bestätigen</label>
+          <input type="password" id="confirmAdminPassword" placeholder="Neues Passwort erneut eingeben" />
+          <button type="submit">Passwort ändern</button>
+        </form>
       </div>
 
       <div class="admin-box">
@@ -676,8 +733,10 @@ function renderAdminContent() {
               <div class="solution-box">
                 <strong>Eingereichte Lösung:</strong>
                 <p>${task.solution || 'Keine Beschreibung'}</p>
+                ${task.solutionFileName ? `<p class="small-note"><strong>Datei:</strong> ${task.solutionFileName}</p>` : '<p class="small-note">Keine Datei hochgeladen.</p>'}
               </div>
               <div class="actions">
+                ${task.solutionFileData ? `<button class="secondary" data-action="open-file" data-id="${task.id}">Datei öffnen</button>` : ''}
                 <button class="secondary" data-action="approve" data-id="${task.id}">Bestätigen</button>
                 <button class="secondary" data-action="reject" data-id="${task.id}">Ablehnen</button>
               </div>
@@ -776,6 +835,16 @@ async function handleSolutionForm(event) {
   }
 
   task.solution = text;
+  const uploadedFile = elements.solutionFileInput?.files?.[0];
+  task.solutionFileName = uploadedFile ? uploadedFile.name : task.solutionFileName || '';
+  if (uploadedFile) {
+    try {
+      task.solutionFileData = await readFileAsDataUrl(uploadedFile);
+    } catch (error) {
+      alert('Datei konnte nicht gelesen werden. Bitte erneut versuchen.');
+      return;
+    }
+  }
 
   const solutionMode = document.querySelector('input[name="solutionMode"]:checked')?.value || 'auto';
 
@@ -829,15 +898,99 @@ function handleTodayActionClick(event) {
   openModal(taskId, 'submit');
 }
 
+function startTaskEdit(task) {
+  const form = document.getElementById('taskForm');
+  if (!form || !task) return;
+
+  const editingTaskId = document.getElementById('editingTaskId');
+  const title = document.getElementById('taskTitle');
+  const category = document.getElementById('taskCategory');
+  const description = document.getElementById('taskDescription');
+  const publishDate = document.getElementById('taskPublishDate');
+  const publishTime = document.getElementById('taskPublishTime');
+  const tipText = document.getElementById('taskTipText');
+  const tipDate = document.getElementById('taskTipDate');
+  const tipTime = document.getElementById('taskTipTime');
+  const validationMode = document.getElementById('taskValidationMode');
+  const expectedPattern = document.getElementById('expectedPattern');
+  const caseSensitive = document.getElementById('caseSensitive');
+  const whitespaceSensitive = document.getElementById('whitespaceSensitive');
+  const submitButton = document.getElementById('taskSubmitButton');
+  const cancelButton = document.getElementById('cancelTaskEdit');
+
+  if (editingTaskId) editingTaskId.value = task.id;
+  if (title) title.value = task.title || '';
+  if (category) category.value = task.category || '';
+  if (description) description.value = task.description || '';
+  if (publishDate) publishDate.value = task.taskPublishDate || '';
+  if (publishTime) publishTime.value = task.taskPublishTime || '';
+  if (tipText) tipText.value = task.tipText || '';
+  if (tipDate) tipDate.value = task.tipScheduleDate || '';
+  if (tipTime) tipTime.value = task.tipScheduleTime || '';
+  if (validationMode) validationMode.value = task.validationMode || 'manual';
+  if (expectedPattern) expectedPattern.value = task.expectedAnswerPattern || '';
+  if (caseSensitive) caseSensitive.checked = Boolean(task.caseSensitive);
+  if (whitespaceSensitive) whitespaceSensitive.checked = Boolean(task.whitespaceSensitive);
+  if (submitButton) submitButton.textContent = 'Aufgabe speichern';
+  if (cancelButton) cancelButton.style.display = 'inline-flex';
+
+  form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function resetTaskEditForm() {
+  const form = document.getElementById('taskForm');
+  if (!form) return;
+  form.reset();
+
+  const editingTaskId = document.getElementById('editingTaskId');
+  const submitButton = document.getElementById('taskSubmitButton');
+  const cancelButton = document.getElementById('cancelTaskEdit');
+
+  if (editingTaskId) editingTaskId.value = '';
+  if (submitButton) submitButton.textContent = 'Aufgabe hinzufügen';
+  if (cancelButton) cancelButton.style.display = 'none';
+}
+
 async function handleAdminAction(event) {
   const button = event.target.closest('button');
   if (!button) return;
   const action = button.dataset.action;
   const id = button.dataset.id;
-  if (!action || !id) return;
+  if (!action) return;
+
+  if (action === 'cancel-task-edit') {
+    resetTaskEditForm();
+    return;
+  }
+
+  if (!id) return;
 
   const task = state.tasks.find(item => item.id === id);
   if (!task) return;
+
+  if (action === 'open-file') {
+    if (!task.solutionFileData) {
+      alert('Keine Datei gespeichert.');
+      return;
+    }
+
+    try {
+      const blob = dataUrlToBlob(task.solutionFileData);
+      const blobUrl = URL.createObjectURL(blob);
+      const opened = window.open(blobUrl, '_blank');
+
+      if (!opened) {
+        URL.revokeObjectURL(blobUrl);
+        alert('Datei konnte nicht geöffnet werden. Bitte Pop-up-Blocker prüfen.');
+        return;
+      }
+
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+    } catch (error) {
+      alert('Datei ist beschädigt oder konnte nicht geöffnet werden.');
+    }
+    return;
+  }
 
   if (action === 'approve') {
     task.solved = true;
@@ -856,6 +1009,25 @@ async function handleAdminAction(event) {
     renderTasks();
     renderAdminContent();
   }
+
+  if (action === 'edit-task') {
+    startTaskEdit(task);
+    return;
+  }
+
+  if (action === 'delete-task') {
+    const confirmed = window.confirm(`Aufgabe "${task.title}" wirklich löschen?`);
+    if (!confirmed) return;
+
+    state.tasks = state.tasks.filter(item => item.id !== id);
+    await saveTasks();
+    renderTasks();
+    renderSolved();
+    renderTodayActions();
+    renderTip();
+    renderAdminContent();
+    alert('Aufgabe wurde gelöscht.');
+  }
 }
 
 function handleAdminLogin(event) {
@@ -863,7 +1035,7 @@ function handleAdminLogin(event) {
   const passwordInput = document.getElementById('adminPassword');
   const value = passwordInput?.value.trim();
 
-  if (value === ADMIN_PASSWORD) {
+  if (value === state.adminPassword) {
     state.adminLoggedIn = true;
     saveAdminState();
     renderAdminContent();
@@ -871,6 +1043,38 @@ function handleAdminLogin(event) {
   } else {
     alert('Falsches Passwort.');
   }
+}
+
+function handleAdminPasswordChange(event) {
+  event.preventDefault();
+  const current = document.getElementById('currentAdminPassword')?.value.trim() || '';
+  const next = document.getElementById('newAdminPassword')?.value.trim() || '';
+  const confirm = document.getElementById('confirmAdminPassword')?.value.trim() || '';
+
+  if (!current || !next || !confirm) {
+    alert('Bitte alle Passwortfelder ausfüllen.');
+    return;
+  }
+
+  if (current !== state.adminPassword) {
+    alert('Aktuelles Passwort ist falsch.');
+    return;
+  }
+
+  if (next.length < 6) {
+    alert('Neues Passwort muss mindestens 6 Zeichen lang sein.');
+    return;
+  }
+
+  if (next !== confirm) {
+    alert('Die neue Passworteingabe stimmt nicht überein.');
+    return;
+  }
+
+  state.adminPassword = next;
+  saveAdminPassword(next);
+  event.target.reset();
+  alert('Admin-Passwort wurde geändert.');
 }
 
 function handleLogout() {
@@ -914,6 +1118,7 @@ async function handleAddTask(event) {
   const expectedAnswerPattern = document.getElementById('expectedPattern')?.value.trim() || '';
   const caseSensitive = document.getElementById('caseSensitive')?.checked || false;
   const whitespaceSensitive = document.getElementById('whitespaceSensitive')?.checked || false;
+  const editingTaskId = document.getElementById('editingTaskId')?.value || '';
 
   if (publishDate) {
     const publishDay = new Date(`${publishDate}T00:00:00`).getDay();
@@ -941,31 +1146,55 @@ async function handleAddTask(event) {
     return;
   }
 
-  const newTask = {
-    id: `task-${Date.now()}`,
-    title,
-    description,
-    category,
-    validationMode,
-    expectedAnswerPattern,
-    caseSensitive,
-    whitespaceSensitive,
-    reviewStatus: 'open',
-    tipText,
-    taskPublishDate: publishDate,
-    taskPublishTime: publishTime,
-    tipScheduleDate: tipDate,
-    tipScheduleTime: tipTime,
-    solved: false,
-    solution: '',
-    solvedAt: null,
-    taskFileName: '',
-    solutionFileName: ''
-  };
+  if (editingTaskId) {
+    const taskIndex = state.tasks.findIndex(item => item.id === editingTaskId);
+    if (taskIndex < 0) {
+      alert('Aufgabe zum Bearbeiten wurde nicht gefunden.');
+      return;
+    }
 
-  state.tasks.push(normalizeTask(newTask));
-  console.log('Neue Aufgabe hinzugefügt:', newTask);
-  console.log('state.tasks nach push:', state.tasks.length);
+    const existingTask = state.tasks[taskIndex];
+    state.tasks[taskIndex] = normalizeTask({
+      ...existingTask,
+      title,
+      description,
+      category,
+      validationMode,
+      expectedAnswerPattern,
+      caseSensitive,
+      whitespaceSensitive,
+      tipText,
+      taskPublishDate: publishDate,
+      taskPublishTime: publishTime,
+      tipScheduleDate: tipDate,
+      tipScheduleTime: tipTime
+    });
+  } else {
+    const newTask = {
+      id: `task-${Date.now()}`,
+      title,
+      description,
+      category,
+      validationMode,
+      expectedAnswerPattern,
+      caseSensitive,
+      whitespaceSensitive,
+      reviewStatus: 'open',
+      tipText,
+      taskPublishDate: publishDate,
+      taskPublishTime: publishTime,
+      tipScheduleDate: tipDate,
+      tipScheduleTime: tipTime,
+      solved: false,
+      solution: '',
+      solvedAt: null,
+      taskFileName: '',
+      solutionFileName: '',
+      solutionFileData: ''
+    };
+
+    state.tasks.push(normalizeTask(newTask));
+  }
 
   try {
     await saveTasks();
@@ -978,9 +1207,11 @@ async function handleAddTask(event) {
 
   renderTasks();
   renderSolved();
+  renderTodayActions();
+  renderTip();
   renderAdminContent();
-  event.target.reset();
-  alert('Aufgabe hinzugefügt.');
+  resetTaskEditForm();
+  alert(editingTaskId ? 'Aufgabe aktualisiert.' : 'Aufgabe hinzugefügt.');
 }
 
 function matchesPattern(text, pattern, options = {}) {
@@ -1022,6 +1253,9 @@ function initializeEvents() {
       if (event.target.id === 'adminLoginForm') {
         event.preventDefault();
         handleAdminLogin(event);
+      } else if (event.target.id === 'adminPasswordForm') {
+        event.preventDefault();
+        handleAdminPasswordChange(event);
       } else if (event.target.id === 'tipForm') {
         event.preventDefault();
         handleTipPublish(event);
