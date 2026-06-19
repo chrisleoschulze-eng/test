@@ -266,6 +266,12 @@ option {
   color: #ff6b6b;
 }
 
+.status-pill.success {
+  background: rgba(63, 229, 141, 0.18);
+  color: #3fe58d;
+  border: 1px solid rgba(63, 229, 141, 0.35);
+}
+
 .card {
   margin-bottom: 24px;
 }
