@@ -4,6 +4,8 @@ if (!window.__ksScriptLoaded) {
     const STORAGE_TASKS = 'ks_tasks';
     const STORAGE_TIP = 'ks_tip';
     const STORAGE_ADMIN_PASSWORD = 'ks_admin_password';
+    const STORAGE_CHAT_USERS = 'ks_chat_users';
+    const STORAGE_CHAT_MESSAGES = 'ks_chat_messages';
     const SUPABASE_URL = 'https://gpsnklnubbqkntseqeqb.supabase.co';
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdwc25rbG51YmJxa250c2VxZXFiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MDQyNjgsImV4cCI6MjA5NzM4MDI2OH0.VICqdMCm4mknyBIoTdYbH-tQ7g408gpKl_zlVHPp7z4';
     const ADMIN_PASSWORD = 'Chemtrail42';
@@ -139,6 +141,27 @@ const defaultTasks = [
     solvedAt: null,
     taskFileName: '',
     solutionFileName: ''
+  },
+  {
+    id: 'task-7',
+    title: 'Überzeuge die KI',
+    description: 'Find out what "Chuck Norris wishes" <a href="aichat.html" target="_blank" style="color:var(--accent);">→ Zum Chatbot</a>',
+    category: 'Puzzle',
+    validationMode: 'auto',
+    expectedAnswerPattern: '73',
+    caseSensitive: false,
+    whitespaceSensitive: true,
+    reviewStatus: 'open',
+    tipText: 'Manchmal hilft Logik, manchmal Einfühlungsvermögen – und manchmal musst du eine KI von deiner Vertrauenswürdigkeit überzeugen.',
+    taskPublishDate: '',
+    taskPublishTime: '',
+    tipScheduleDate: '',
+    tipScheduleTime: '',
+    solved: false,
+    solution: '',
+    solvedAt: null,
+    taskFileName: '',
+    solutionFileName: ''
   }
 ];
 
@@ -152,6 +175,9 @@ const state = {
   tip: null,
   adminLoggedIn: false,
   adminPassword: ADMIN_PASSWORD,
+  chatUsers: [],
+  chatMessages: [],
+  credentialsUnlocked: false,
   currentTaskId: null,
   currentMode: 'submit'
 };
@@ -192,7 +218,7 @@ function formatDateTime(dateStr, timeStr) {
 }
 
 function normalizeTask(task) {
-  return {
+  const normalized = {
     id: task.id,
     title: task.title,
     description: task.description,
@@ -214,6 +240,16 @@ function normalizeTask(task) {
     solutionFileName: task.solutionFileName || task.solutionfilename || '',
     solutionFileData: task.solutionFileData || task.solutionfiledata || ''
   };
+
+  if (normalized.id === 'task-7') {
+    normalized.expectedAnswerPattern = '73';
+    normalized.whitespaceSensitive = false;
+    if (!normalized.description || normalized.description.toLowerCase().includes('ueberzeuge') || normalized.description.toLowerCase().includes('überzeuge') || normalized.description.toLowerCase().includes('higgsbo')) {
+      normalized.description = 'Find out what "Chuck Norris wishes" <a href="aichat.html" target="_blank" style="color:var(--accent);">→ Zum Chatbot</a>';
+    }
+  }
+
+  return normalized;
 }
 
 function normalizeTaskForDb(task) {
@@ -239,6 +275,44 @@ function normalizeTaskForDb(task) {
     solutionfilename: task.solutionFileName,
     solutionfiledata: task.solutionFileData
   };
+}
+
+function normalizeChatUser(user) {
+  return {
+    id: user.id,
+    username: user.username || '',
+    password: user.password || '',
+    approved: Boolean(user.approved),
+    is_admin: Boolean(user.is_admin || user.isadmin)
+  };
+}
+
+function normalizeChatMessage(message) {
+  return {
+    id: message.id,
+    username: message.username || '',
+    message: message.message || '',
+    fileName: message.fileName || message.file_name || '',
+    fileData: message.fileData || message.file_data || '',
+    createdAt: message.createdAt || message.created_at || null
+  };
+}
+
+function normalizeAdminLikeName(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+    .replace(/[0]/g, 'o')
+    .replace(/[1]/g, 'i')
+    .replace(/[3]/g, 'e')
+    .replace(/[4]/g, 'a')
+    .replace(/[5]/g, 's');
+}
+
+function isAdminLikeUsername(value) {
+  const normalized = normalizeAdminLikeName(value);
+  if (!normalized) return false;
+  return normalized.includes('admin') || normalized.startsWith('adm') || normalized === 'administrator';
 }
 
 function isTaskPublished(task) {
@@ -311,6 +385,25 @@ async function loadState() {
     state.tasks = tasksFromStorage ? mergeDefaultTasks(JSON.parse(tasksFromStorage)) : defaultTasks.map(normalizeTask);
     const tipFromStorage = localStorage.getItem(STORAGE_TIP);
     state.tip = tipFromStorage ? JSON.parse(tipFromStorage) : defaultTip;
+    const usersFromStorage = localStorage.getItem(STORAGE_CHAT_USERS);
+    state.chatUsers = usersFromStorage ? JSON.parse(usersFromStorage).map(normalizeChatUser) : [];
+    const messagesFromStorage = localStorage.getItem(STORAGE_CHAT_MESSAGES);
+    state.chatMessages = messagesFromStorage ? JSON.parse(messagesFromStorage).map(normalizeChatMessage) : [];
+    const adminUser = state.chatUsers.find(user => String(user.username).toLowerCase() === 'admin');
+    if (adminUser) {
+      adminUser.password = state.adminPassword;
+      adminUser.approved = true;
+      adminUser.is_admin = true;
+    } else {
+      state.chatUsers.push({
+        id: `local-admin-${Date.now()}`,
+        username: 'Admin',
+        password: state.adminPassword,
+        approved: true,
+        is_admin: true
+      });
+    }
+    localStorage.setItem(STORAGE_CHAT_USERS, JSON.stringify(state.chatUsers));
     return;
   }
 
@@ -335,13 +428,104 @@ async function loadState() {
     if (tipError) throw tipError;
 
     state.tip = (tipData && tipData.length > 0) ? tipData[0] : defaultTip;
+    await loadChatUsers();
+    await loadChatMessages();
   } catch (error) {
     console.error('Supabase Error, using fallback:', error);
     const tasksFromStorage = localStorage.getItem(STORAGE_TASKS);
     state.tasks = tasksFromStorage ? mergeDefaultTasks(JSON.parse(tasksFromStorage)) : defaultTasks.map(normalizeTask);
     const tipFromStorage = localStorage.getItem(STORAGE_TIP);
     state.tip = tipFromStorage ? JSON.parse(tipFromStorage) : defaultTip;
+    const usersFromStorage = localStorage.getItem(STORAGE_CHAT_USERS);
+    state.chatUsers = usersFromStorage ? JSON.parse(usersFromStorage).map(normalizeChatUser) : [];
+    const messagesFromStorage = localStorage.getItem(STORAGE_CHAT_MESSAGES);
+    state.chatMessages = messagesFromStorage ? JSON.parse(messagesFromStorage).map(normalizeChatMessage) : [];
   }
+}
+
+async function ensureAdminChatUser() {
+  const existingAdmin = state.chatUsers.find(user => String(user.username).toLowerCase() === 'admin');
+
+  if (!supabase) {
+    if (existingAdmin) {
+      existingAdmin.password = state.adminPassword;
+      existingAdmin.approved = true;
+      existingAdmin.is_admin = true;
+      if (!existingAdmin.color) existingAdmin.color = '#ff8c00';
+    } else {
+      state.chatUsers.push({
+        id: `local-admin-${Date.now()}`,
+        username: 'Admin',
+        password: state.adminPassword,
+        color: '#ff8c00',
+        approved: true,
+        is_admin: true
+      });
+    }
+    localStorage.setItem(STORAGE_CHAT_USERS, JSON.stringify(state.chatUsers));
+    return;
+  }
+
+  const payload = {
+    username: 'Admin',
+    password: state.adminPassword,
+    color: '#ff8c00',
+    approved: true,
+    is_admin: true
+  };
+
+  if (existingAdmin && typeof existingAdmin.id !== 'undefined') {
+    await supabase.from('chat_users').update(payload).eq('id', existingAdmin.id);
+  } else {
+    await supabase.from('chat_users').upsert(payload, { onConflict: 'username' });
+  }
+}
+
+async function loadChatUsers() {
+  if (!supabase) {
+    const usersFromStorage = localStorage.getItem(STORAGE_CHAT_USERS);
+    state.chatUsers = usersFromStorage ? JSON.parse(usersFromStorage).map(normalizeChatUser) : [];
+    await ensureAdminChatUser();
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from('chat_users')
+    .select('*')
+    .order('created_at', { ascending: true });
+
+  if (error) throw error;
+
+  state.chatUsers = (data || []).map(normalizeChatUser);
+  await ensureAdminChatUser();
+
+  const { data: refreshed, error: refreshError } = await supabase
+    .from('chat_users')
+    .select('*')
+    .order('created_at', { ascending: true });
+
+  if (refreshError) throw refreshError;
+  state.chatUsers = (refreshed || []).map(normalizeChatUser);
+  localStorage.setItem(STORAGE_CHAT_USERS, JSON.stringify(state.chatUsers));
+}
+
+async function loadChatMessages() {
+  if (!supabase) {
+    const messagesFromStorage = localStorage.getItem(STORAGE_CHAT_MESSAGES);
+    state.chatMessages = messagesFromStorage ? JSON.parse(messagesFromStorage).map(normalizeChatMessage) : [];
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from('chat_messages')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(200);
+
+  if (error) throw error;
+
+  state.chatMessages = (data || []).map(normalizeChatMessage);
+  localStorage.setItem(STORAGE_CHAT_MESSAGES, JSON.stringify(state.chatMessages));
 }
 
 async function saveTasks() {
@@ -397,10 +581,13 @@ async function refreshRemoteState() {
     if (tipError) throw tipError;
 
     state.tip = (tipData && tipData.length > 0) ? tipData[0] : defaultTip;
+    await loadChatUsers();
+    await loadChatMessages();
     renderTasks();
     renderSolved();
     renderTip();
     renderTodayActions();
+    renderAdminContent();
   } catch (error) {
     console.warn('Realtime sync refresh failed:', error);
   }
@@ -416,6 +603,8 @@ function setupRealtimeSync() {
     .channel('public:tasks_tips_sync')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => refreshRemoteState())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'tips' }, () => refreshRemoteState())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_users' }, () => refreshRemoteState())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_messages' }, () => refreshRemoteState())
     .subscribe(status => {
       if (status === 'SUBSCRIBED') {
         console.log('Supabase Realtime sync aktiv');
@@ -429,8 +618,11 @@ function saveAdminState() {
   localStorage.setItem('ks_admin_logged_in', state.adminLoggedIn ? 'true' : 'false');
 }
 
-function saveAdminPassword(password) {
+async function saveAdminPassword(password) {
   localStorage.setItem(STORAGE_ADMIN_PASSWORD, password);
+  state.adminPassword = password;
+  await ensureAdminChatUser();
+  await loadChatUsers();
 }
 
 function displayStorageInfo() {
@@ -626,7 +818,8 @@ function renderAdminContent() {
   }
 
   const pendingTasks = state.tasks.filter(task => task.validationMode === 'manual' && task.reviewStatus === 'pending');
-  const rejectedTasks = state.tasks.filter(task => task.reviewStatus === 'rejected' && !task.solved);
+  const pendingUsers = state.chatUsers.filter(user => !user.approved && !user.is_admin);
+  const managedUsers = state.chatUsers.filter(user => !user.is_admin);
 
   const allTasks = state.tasks.map(task => {
     const status = task.solved ? 'Erledigt' : isTaskScheduled(task) ? 'Geplant' : 'Offen';
@@ -651,6 +844,7 @@ function renderAdminContent() {
         ${task.solutionFileName ? `<div class="file-meta"><strong>Eingereichte Datei:</strong> ${task.solutionFileName}</div>` : ''}
         <div class="actions">
           ${task.solutionFileData ? `<button class="secondary" data-action="open-file" data-id="${task.id}">Datei öffnen</button>` : ''}
+          ${(task.solved || task.reviewStatus !== 'open' || task.solution || task.solutionFileData) ? `<button class="secondary" data-action="reopen-task" data-id="${task.id}">Erneut stellen</button>` : ''}
           <button class="secondary" data-action="edit-task" data-id="${task.id}">Bearbeiten</button>
           <button class="danger" data-action="delete-task" data-id="${task.id}">Löschen</button>
         </div>
@@ -708,7 +902,19 @@ function renderAdminContent() {
       </div>
 
       <div class="admin-box">
-        <form id="adminPasswordForm">
+        <h2>KI-Challenge Zähler</h2>
+        <p class="small-note">Gestellte Fragen an HiggsBo zurücksetzen, damit die Challenge neu beginnt.</p>
+        <button class="secondary" id="resetAiCounterButton">Fragenzähler zurücksetzen</button>
+        <button class="secondary" id="resetAiHistoryButton">Chatverlauf zurücksetzen</button>
+      </div>
+
+      <div class="admin-box">
+        <h2>KI-Backend prüfen</h2>
+        <p class="small-note">Testet die Verbindung zur echten Grok/xAI-Route der KI-Challenge.</p>
+        <p class="small-note">Status: <strong id="aiBackendStatusLabel">Ungeprüft</strong></p>
+        <p class="small-note" id="aiBackendStatusDetails">Noch kein Prüfvorgang ausgeführt.</p>
+        <button class="secondary" id="checkAiBackendButton">Backend prüfen</button>
+      </div>
           <label for="currentAdminPassword">Aktuelles Passwort</label>
           <input type="password" id="currentAdminPassword" placeholder="Aktuelles Passwort" />
           <label for="newAdminPassword">Neues Passwort</label>
@@ -717,6 +923,57 @@ function renderAdminContent() {
           <input type="password" id="confirmAdminPassword" placeholder="Neues Passwort erneut eingeben" />
           <button type="submit">Passwort ändern</button>
         </form>
+      </div>
+
+      <div class="admin-box">
+        <h2>Neue Chat-Registrierungen</h2>
+        ${pendingUsers.length === 0 ? '<p class="small-note">Keine offenen Registrierungen.</p>' : ''}
+        <div class="task-list">
+          ${pendingUsers.map(user => `
+            <article class="task-card">
+              <header>
+                <div>
+                  <h3>${user.username}</h3>
+                  <span class="badge">Wartet auf Freigabe</span>
+                </div>
+              </header>
+              <div class="actions">
+                <button class="secondary" data-action="approve-user" data-id="${user.id}">Freigeben</button>
+                <button class="danger" data-action="reject-user" data-id="${user.id}">Ablehnen</button>
+              </div>
+            </article>
+          `).join('')}
+        </div>
+      </div>
+
+      <div class="admin-box">
+        <h2>Chat-Anmeldedaten verwalten</h2>
+        <p class="small-note">Für Einsicht/Bearbeitung bitte Admin-Passwort separat bestätigen.</p>
+        <form id="credentialsUnlockForm">
+          <label for="credentialsUnlockPassword">Admin-Passwort bestätigen</label>
+          <input type="password" id="credentialsUnlockPassword" placeholder="Admin-Passwort" />
+          <button type="submit">Anmeldedaten entsperren</button>
+        </form>
+        ${state.credentialsUnlocked ? `
+          <div class="task-list" style="margin-top: 16px;">
+            ${managedUsers.length === 0 ? '<p class="small-note">Keine Nutzer vorhanden.</p>' : managedUsers.map(user => `
+              <form class="user-edit-form admin-box" data-user-id="${user.id}">
+                <label>Benutzername</label>
+                <input type="text" name="username" value="${user.username}" />
+                <label>Passwort</label>
+                <input type="text" name="password" value="${user.password}" />
+                <label>Namensfarbe im Chat</label>
+                <div style="display:flex; align-items:center; gap:12px;">
+                  <input type="color" name="color" value="${user.color || '#7dd0ff'}" style="width:48px; height:38px; border:none; border-radius:8px; cursor:pointer; background:none;" />
+                  <span class="small-note" style="color:${user.color || '#7dd0ff'}; font-weight:600;">${user.username}</span>
+                </div>
+                <div class="actions">
+                  <button type="submit" class="secondary">Speichern</button>
+                </div>
+              </form>
+            `).join('')}
+          </div>
+        ` : ''}
       </div>
 
       <div class="admin-box">
@@ -737,6 +994,7 @@ function renderAdminContent() {
               </div>
               <div class="actions">
                 ${task.solutionFileData ? `<button class="secondary" data-action="open-file" data-id="${task.id}">Datei öffnen</button>` : ''}
+                <button class="secondary" data-action="reopen-task" data-id="${task.id}">Erneut stellen</button>
                 <button class="secondary" data-action="approve" data-id="${task.id}">Bestätigen</button>
                 <button class="secondary" data-action="reject" data-id="${task.id}">Ablehnen</button>
               </div>
@@ -963,6 +1221,44 @@ async function handleAdminAction(event) {
     return;
   }
 
+  if (action === 'approve-user') {
+    const user = state.chatUsers.find(item => String(item.id) === String(id));
+    if (!user) return;
+
+    user.approved = true;
+    if (supabase) {
+      const { error } = await supabase.from('chat_users').update({ approved: true }).eq('id', user.id);
+      if (error) {
+        alert('Freigabe fehlgeschlagen.');
+        return;
+      }
+      await loadChatUsers();
+    } else {
+      localStorage.setItem(STORAGE_CHAT_USERS, JSON.stringify(state.chatUsers));
+    }
+    renderAdminContent();
+    return;
+  }
+
+  if (action === 'reject-user') {
+    const user = state.chatUsers.find(item => String(item.id) === String(id));
+    if (!user) return;
+
+    if (supabase) {
+      const { error } = await supabase.from('chat_users').delete().eq('id', user.id);
+      if (error) {
+        alert('Ablehnen fehlgeschlagen.');
+        return;
+      }
+      await loadChatUsers();
+    } else {
+      state.chatUsers = state.chatUsers.filter(item => String(item.id) !== String(id));
+      localStorage.setItem(STORAGE_CHAT_USERS, JSON.stringify(state.chatUsers));
+    }
+    renderAdminContent();
+    return;
+  }
+
   if (!id) return;
 
   const task = state.tasks.find(item => item.id === id);
@@ -1010,6 +1306,22 @@ async function handleAdminAction(event) {
     renderAdminContent();
   }
 
+  if (action === 'reopen-task') {
+    task.solved = false;
+    task.reviewStatus = 'open';
+    task.solution = '';
+    task.solvedAt = null;
+    task.solutionFileName = '';
+    task.solutionFileData = '';
+    await saveTasks();
+    renderTasks();
+    renderSolved();
+    renderTodayActions();
+    renderAdminContent();
+    alert('Aufgabe wurde erneut gestellt.');
+    return;
+  }
+
   if (action === 'edit-task') {
     startTaskEdit(task);
     return;
@@ -1045,7 +1357,7 @@ function handleAdminLogin(event) {
   }
 }
 
-function handleAdminPasswordChange(event) {
+async function handleAdminPasswordChange(event) {
   event.preventDefault();
   const current = document.getElementById('currentAdminPassword')?.value.trim() || '';
   const next = document.getElementById('newAdminPassword')?.value.trim() || '';
@@ -1071,16 +1383,184 @@ function handleAdminPasswordChange(event) {
     return;
   }
 
-  state.adminPassword = next;
-  saveAdminPassword(next);
+  await saveAdminPassword(next);
+  state.credentialsUnlocked = false;
   event.target.reset();
   alert('Admin-Passwort wurde geändert.');
+  renderAdminContent();
+}
+
+function handleCredentialsUnlock(event) {
+  event.preventDefault();
+  const password = document.getElementById('credentialsUnlockPassword')?.value.trim() || '';
+
+  if (password !== state.adminPassword) {
+    alert('Admin-Passwort falsch.');
+    return;
+  }
+
+  state.credentialsUnlocked = true;
+  renderAdminContent();
+}
+
+async function handleUserEditSubmit(event) {
+  event.preventDefault();
+  if (!state.credentialsUnlocked) {
+    alert('Bitte zuerst Anmeldedaten entsperren.');
+    return;
+  }
+
+  const form = event.target;
+  const userId = form.dataset.userId;
+  const username = form.querySelector('input[name="username"]')?.value.trim() || '';
+  const password = form.querySelector('input[name="password"]')?.value.trim() || '';
+  const user = state.chatUsers.find(item => String(item.id) === String(userId));
+  const color = form.querySelector('input[name="color"]')?.value || user?.color || '#7dd0ff';
+
+  if (!user) {
+    alert('Nutzer nicht gefunden.');
+    return;
+  }
+
+  if (!username || !password) {
+    alert('Benutzername und Passwort sind erforderlich.');
+    return;
+  }
+
+  if (!user.is_admin && isAdminLikeUsername(username)) {
+    alert('Benutzername zu aehnlich zu Admin ist nicht erlaubt.');
+    return;
+  }
+
+  const duplicate = state.chatUsers.find(item => String(item.id) !== String(userId) && String(item.username).toLowerCase() === username.toLowerCase());
+  if (duplicate) {
+    alert('Benutzername ist bereits vergeben.');
+    return;
+  }
+
+  user.username = username;
+  user.password = password;
+  user.color = color;
+
+  if (supabase) {
+    const { error } = await supabase
+      .from('chat_users')
+      .update({ username: user.username, password: user.password, color: user.color })
+      .eq('id', user.id);
+    if (error) {
+      alert('Speichern fehlgeschlagen.');
+      return;
+    }
+    await loadChatUsers();
+  } else {
+    localStorage.setItem(STORAGE_CHAT_USERS, JSON.stringify(state.chatUsers));
+  }
+
+  alert('Nutzerdaten gespeichert.');
+  renderAdminContent();
 }
 
 function handleLogout() {
   state.adminLoggedIn = false;
+  state.credentialsUnlocked = false;
   saveAdminState();
   renderAdminContent();
+}
+
+async function handleResetAiCounter() {
+  const confirmed = window.confirm('Fragenzähler der KI-Challenge wirklich auf 0 zurücksetzen?');
+  if (!confirmed) return;
+
+  if (supabase) {
+    const { error } = await supabase
+      .from('ai_challenge_state')
+      .update({ question_count: 0, updated_at: new Date().toISOString() })
+      .gt('id', 0);
+    if (error) {
+      alert('Zurücksetzen fehlgeschlagen: ' + error.message);
+      return;
+    }
+  } else {
+    localStorage.setItem('ks_ai_question_count', '0');
+  }
+
+  alert('Fragenzähler wurde zurückgesetzt.');
+}
+
+function handleResetAiHistory() {
+  const confirmed = window.confirm('Chatverlauf und KI-Gedächtnis wirklich zurücksetzen?');
+  if (!confirmed) return;
+
+  localStorage.removeItem('ks_ai_chat_history');
+  localStorage.removeItem('ks_ai_memory');
+
+  alert('Chatverlauf wurde zurückgesetzt.');
+}
+
+function setAiBackendAdminStatus(label, details, mode = 'neutral') {
+  const labelEl = document.getElementById('aiBackendStatusLabel');
+  const detailsEl = document.getElementById('aiBackendStatusDetails');
+
+  if (labelEl) {
+    labelEl.textContent = label;
+    const styles = {
+      neutral: { background: 'rgba(125,208,255,0.12)', color: '#7dd0ff', borderColor: 'rgba(125,208,255,0.25)' },
+      success: { background: 'rgba(63,229,141,0.14)', color: '#3fe58d', borderColor: 'rgba(63,229,141,0.28)' },
+      warning: { background: 'rgba(255,165,0,0.12)', color: '#ffb347', borderColor: 'rgba(255,165,0,0.25)' },
+      danger: { background: 'rgba(255,99,99,0.12)', color: '#ff8a8a', borderColor: 'rgba(255,99,99,0.25)' },
+    };
+    const style = styles[mode] || styles.neutral;
+    labelEl.style.background = style.background;
+    labelEl.style.color = style.color;
+    labelEl.style.border = `1px solid ${style.borderColor}`;
+    labelEl.style.padding = '0.2rem 0.55rem';
+    labelEl.style.borderRadius = '999px';
+  }
+
+  if (detailsEl) {
+    detailsEl.textContent = details;
+  }
+}
+
+async function handleCheckAiBackend() {
+  if (!supabase) {
+    setAiBackendAdminStatus('Kein Supabase', 'Der Client ist nicht verfügbar, daher kann der Backend-Test nicht ausgeführt werden.', 'danger');
+    return;
+  }
+
+  setAiBackendAdminStatus('Prüfung läuft', 'Verbinde mit der Edge Function aria-chat...', 'neutral');
+
+  try {
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/aria-chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`
+      },
+      body: JSON.stringify({
+        message: 'Statusprüfung',
+        questionCount: 0,
+        resistance: 100,
+        history: []
+      })
+    });
+
+    const payload = await response.json().catch(() => null);
+    if (response.ok && typeof payload?.reply === 'string') {
+      setAiBackendAdminStatus('Verbunden', `Antwort erhalten: ${payload.reply.slice(0, 160)}`, 'success');
+      return;
+    }
+
+    const errorText = String(payload?.error || `HTTP ${response.status}`).toLowerCase();
+    if (errorText.includes('credits') || errorText.includes('license') || errorText.includes('permission-denied')) {
+      setAiBackendAdminStatus('xAI blockiert', payload?.error || 'xAI meldet fehlende Credits oder Lizenz.', 'warning');
+    } else {
+      setAiBackendAdminStatus('Fehler', payload?.error || `Unerwartete Antwort: HTTP ${response.status}`, 'danger');
+    }
+  } catch (error) {
+    setAiBackendAdminStatus('Nicht erreichbar', String(error?.message || error), 'danger');
+  }
 }
 
 async function handleTipPublish(event) {
@@ -1256,6 +1736,12 @@ function initializeEvents() {
       } else if (event.target.id === 'adminPasswordForm') {
         event.preventDefault();
         handleAdminPasswordChange(event);
+      } else if (event.target.id === 'credentialsUnlockForm') {
+        event.preventDefault();
+        handleCredentialsUnlock(event);
+      } else if (event.target.classList.contains('user-edit-form')) {
+        event.preventDefault();
+        handleUserEditSubmit(event);
       } else if (event.target.id === 'tipForm') {
         event.preventDefault();
         handleTipPublish(event);
@@ -1267,8 +1753,17 @@ function initializeEvents() {
     // Use event delegation for admin buttons
     elements.adminContent.addEventListener('click', (event) => {
       const logoutBtn = event.target.closest('#logoutButton');
+      const resetAiBtn = event.target.closest('#resetAiCounterButton');
+      const resetAiHistoryBtn = event.target.closest('#resetAiHistoryButton');
+      const checkAiBtn = event.target.closest('#checkAiBackendButton');
       if (logoutBtn) {
         handleLogout();
+      } else if (resetAiBtn) {
+        handleResetAiCounter();
+      } else if (resetAiHistoryBtn) {
+        handleResetAiHistory();
+      } else if (checkAiBtn) {
+        handleCheckAiBackend();
       } else {
         handleAdminAction(event);
       }
