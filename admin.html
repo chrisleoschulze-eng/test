@@ -3,73 +3,33 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Meine Challenge Aufgaben</title>
+  <title>Admin Dashboard</title>
   <link rel="stylesheet" href="style.css">
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
   <header>
-    <h1>Challenge Aufgaben & Lösungsarchiv</h1>
-    <p>Diese Website begleitet dich als einzelner Nutzer durch Aufgaben, Tipps und persönliche Erfolge. Reiche Lösungen ein, sieh dir erledigte Aufgaben an und verwalte neue Inhalte als Admin.</p>
+    <h1>Admin Dashboard</h1>
+    <p>Verwalte Aufgaben, wähle den Prüfmodus und bestätige eingereichte Lösungen.</p>
   </header>
 
-  <main>
-    <section class="overview">
-      <div class="card stat">
-        <span class="badge">Fortschritt</span>
-        <strong id="taskCount">0</strong>
-        <p>Aufgaben insgesamt</p>
-      </div>
-      <div class="card stat">
-        <span class="badge">Gelöst</span>
-        <strong id="solvedCount">0</strong>
-        <p>Erfolgreich abgeschlossene Aufgaben</p>
-      </div>
-      <div class="card stat">
-        <span class="badge">Tipp</span>
-        <strong id="tipDay">Mittwoch</strong>
-        <p>Der aktuelle Wochen-Tipp</p>
-      </div>
-    </section>
-
+  <main class="admin-page">
     <section class="card">
-      <div style="display:flex; align-items:center; justify-content:space-between; gap: 16px; flex-wrap:wrap;">
-        <div>
-          <h2>Aktuelle Aufgaben</h2>
-          <p class="small-note">Bearbeite deine Aufgaben nacheinander. Jede Aufgabe kann mit einer individuellen Lösung abgeschlossen werden.</p>
-        </div>
-        <div><span class="badge" id="completionBadge">Noch nichts gelöst</span></div>
-      </div>
-      <div class="task-list" id="taskList"></div>
+      <h2>Admin Übersicht</h2>
+      <p class="small-note">Hier kannst du Aufgaben planen, Tipps für Mittwoch vorbereiten und manuelle Einreichungen prüfen.</p>
     </section>
 
-    <section class="card" id="solvedSection">
-      <h2>Erledigte Aufgaben</h2>
-      <p class="small-note">Hier findest du deine alten Probleme und die Lösungen, die du eingereicht hast.</p>
-      <div class="task-list" id="solvedList"></div>
-    </section>
-
-    <section class="grid layout-grid">
-      <div class="card" id="todayTasksCard">
-        <h2>Mittwochs-Tipp</h2>
-        <div class="solution-box" id="weeklyTip"></div>
-        <p class="small-note" id="tipPublished"></p>
-        <div class="spacer"></div>
-        <h2>Was du heute tun kannst</h2>
-        <ul class="action-list" id="todayActionList"></ul>
-        <p class="small-note">Klicke auf eine Aufgabe, um direkt zur Einreichung zu springen. Klick auf die Karte, um zur Aufgabenliste zu scrollen.</p>
-      </div>
-
+    <section class="grid layout-grid admin-grid">
       <div class="card">
-        <h2>Admin Bereich</h2>
-        <p class="small-note">Die Admin-Ansicht ist separat. Melde dich als Admin an, um Aufgaben, Prüfmodus und Einreichungen zu verwalten.</p>
-        <a class="button-link" href="admin.html">Zum Admin-Dashboard</a>
+        <div id="adminContent"></div>
       </div>
-
       <div class="card">
-        <h2>Community Chat</h2>
-        <p class="small-note">Registriere dich als Nutzer und chatte mit Dateiupload. Neue Accounts muessen vom Admin freigegeben werden.</p>
+        <h2>Admin-Hinweis</h2>
+        <p class="small-note">Die Aufgabe kann wahlweise automatisch anhand einer Musterlösung geprüft werden oder zur manuellen Bestätigung an den Admin gesendet werden.</p>
+        <p class="small-note">Aufgaben sollten sonntags veröffentlicht und die zugehörigen Tipps für den folgenden Mittwoch geplant werden.</p>
+        <p class="small-note">Neue Chat-Registrierungen muessen hier freigegeben werden. Die Anmeldedaten lassen sich nach separater Admin-Bestaetigung einsehen und bearbeiten.</p>
         <a class="button-link" href="chat.html">Zum Chat</a>
+        <div class="spacer"></div>
+        <a class="button-link" href="index.html">Zurück zur Nutzerseite</a>
       </div>
     </section>
   </main>
@@ -84,13 +44,6 @@
         <button class="close-button secondary" id="closeModalButton" aria-label="Schließen">×</button>
       </header>
       <form id="solutionForm" class="admin-box" data-mode="submit">
-        <div class="validation-choice" id="validationChoice" style="display: none;">
-          <label>Wähle die Prüf-Art</label>
-          <div class="radio-group">
-            <label><input type="radio" name="solutionMode" value="auto" checked /> Musterlösung prüfen</label>
-            <label><input type="radio" name="solutionMode" value="custom" /> Individuelle Lösung einreichen</label>
-          </div>
-        </div>
         <label for="solutionInput">Beschreibe deine Lösung oder deinen Fortschritt</label>
         <textarea id="solutionInput" placeholder="Hier deine Lösung eingeben..."></textarea>
         <div class="file-input-wrapper">
@@ -103,8 +56,8 @@
     </div>
   </div>
 
-  <footer class="footer-note">Die Website speichert Aufgaben und Lösungen lokal im Browser. Für echte Nutzerverwaltung ist ein Server nötig.</footer>
-
+  <footer class="footer-note">Die Website speichert Aufgaben und Lösungen lokal im Browser.</footer>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="script.js"></script>
 </body>
 </html>

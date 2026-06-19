@@ -1,4 +1,4 @@
-if (!window.__ksScriptLoaded) {
+﻿if (!window.__ksScriptLoaded) {
   window.__ksScriptLoaded = true;
   (function() {
     const STORAGE_TASKS = 'ks_tasks';
