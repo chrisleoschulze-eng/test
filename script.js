@@ -899,6 +899,8 @@ function renderAdminContent() {
 
       <div class="admin-box">
         <button id="logoutButton" class="danger">Admin abmelden</button>
+        <a class="button-link chris-mode-button" href="chris.html">Chris Modus</a>
+        <a class="button-link" href="https://console.x.ai/team/a79cc4a6-1327-45be-beb1-ca0f6173b6e4" target="_blank" rel="noopener noreferrer">X Ai Credits</a>
       </div>
 
       <div class="admin-box">

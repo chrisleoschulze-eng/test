@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chris Modus</title>
+  <script>
+    (function redirectFromFileProtocol() {
+      if (window.location.protocol !== 'file:') return;
+
+      const target = 'http://localhost:4173/chris.html';
+      const currentUrl = String(window.location.href || '').toLowerCase();
+      if (currentUrl.indexOf('localhost:4173') !== -1) return;
+
+      // Redirect quickly to avoid file-origin errors from module/network calls.
+      window.location.replace(target);
+
+      setTimeout(function () {
+        if (window.location.protocol === 'file:') {
+          document.body.innerHTML = '<main style="max-width:720px;margin:40px auto;padding:20px;font-family:Segoe UI,Arial,sans-serif;line-height:1.5;color:#f5f7fb;background:#0b1423;border:1px solid rgba(255,255,255,0.12);border-radius:14px;">'
+            + '<h2 style="margin-top:0;">Lokaler Server benötigt</h2>'
+            + '<p>Bitte öffne die Seite über <strong>http://localhost:4173/chris.html</strong> statt über <strong>file://</strong>.</p>'
+            + '<p>Falls der Server nicht läuft, starte ihn im Projektordner und lade dann die URL erneut.</p>'
+            + '</main>';
+        }
+      }, 500);
+    })();
+  </script>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <header>
+    <h1>Chris Modus</h1>
+    <p>Plane deinen Alltag, sieh deinen Kalender und passe alles per KI-Chat an.</p>
+  </header>
+
+  <main class="admin-page">
+    <section class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+        <div>
+          <h2>Dein Planbereich</h2>
+          <p class="small-note">Wähle zwischen Kalenderansicht und KI-gestützter Planbearbeitung.</p>
+        </div>
+        <a class="button-link" href="admin.html">← Zurück zum Admin-Menü</a>
+      </div>
+
+      <div class="actions" style="margin-top: 16px;">
+        <button id="openPlanView" class="secondary">Plan ansehen</button>
+        <button id="openPlanEdit" class="secondary">KI Modus</button>
+        <button id="openTodoView" class="secondary">To Do</button>
+        <button id="openGoalsView" class="secondary">Ziele</button>
+      </div>
+    </section>
+
+    <section id="planViewSection" class="card">
+      <div class="section-header">
+        <h2>Kalenderansicht</h2>
+        <div class="actions">
+          <button id="prevMonth" class="secondary">◀</button>
+          <span id="monthLabel" class="badge">Monat</span>
+          <button id="nextMonth" class="secondary">▶</button>
+        </div>
+      </div>
+      <div id="calendarGrid" class="calendar-grid" style="margin-top:16px;"></div>
+      <div class="importance-legend" style="margin-top:10px;">
+        <span class="badge importance-n">negotiable (n)</span>
+        <span class="badge importance-s">strict (s)</span>
+        <span class="badge importance-r">reserved (r)</span>
+      </div>
+      <p class="small-note" style="margin-top:10px;">Tippe auf einen Tag, um die Time-Box-Tagesansicht als Popup zu öffnen.</p>
+
+      <div class="card" style="margin-top:18px; background:rgba(8,16,30,0.75);">
+        <h3 id="selectedDateLabel">Tag</h3>
+        <div id="selectedDayConflicts" class="small-note"></div>
+        <div id="dayPlanList" class="timebox-list" style="margin-top:12px;"></div>
+      </div>
+    </section>
+
+    <section id="planEditSection" class="card" style="display:none;">
+      <h2>KI Modus</h2>
+      <p class="small-note">Gib Anweisungen wie „Morgen 09:00-11:00 Deep Work“ oder stelle Fragen zu deinem Plan.</p>
+      <div id="planChatLog" class="task-list" style="margin-top:14px; max-height:440px; overflow-y:auto;"></div>
+
+      <form id="planChatForm" class="admin-box" style="margin-top:16px;">
+        <label for="planChatInput">Deine Nachricht an den Plan-Assistenten</label>
+        <textarea id="planChatInput" rows="3" placeholder="z. B. Verschiebe mein Meeting am Freitag auf 15:00-16:00"></textarea>
+        <button type="submit">Senden</button>
+      </form>
+    </section>
+
+    <section id="todoSection" class="card" style="display:none;">
+      <h2>To Do</h2>
+      <p class="small-note">To Dos sind getrennt vom Kalender und nach Wichtigkeit sortiert: strict, reserved, negotiable.</p>
+
+      <form id="todoForm" class="admin-box" style="margin-top:14px;">
+        <label for="todoTitle">Neues To Do</label>
+        <input type="text" id="todoTitle" placeholder="z. B. Steuerunterlagen sortieren" />
+        <label for="todoImportance">Wichtigkeit</label>
+        <select id="todoImportance">
+          <option value="s">urgent</option>
+          <option value="r">sometime</option>
+          <option value="n" selected>anytime</option>
+        </select>
+        <label for="todoNote">Notiz (optional)</label>
+        <textarea id="todoNote" rows="2" placeholder="Zusätzliche Infos"></textarea>
+        <button type="submit">To Do hinzufügen</button>
+      </form>
+
+      <div id="todoSummary" class="small-note" style="margin-top:10px;"></div>
+      <div id="todoBoard" class="todo-board" style="margin-top:14px;"></div>
+
+      <details class="goals-completed-menu" style="margin-top:14px;">
+        <summary>Erledigte Todos</summary>
+        <div id="completedTodoBoard" class="todo-board" style="margin-top:12px;"></div>
+      </details>
+    </section>
+
+    <section id="goalsSection" class="card" style="display:none;">
+      <h2>Ziele</h2>
+      <p class="small-note">Lege Ziele für Tag, Woche, Monat, Jahr, 5 Jahre oder Lifetime an. Abgelaufene Ziele kannst du bestätigen, löschen oder reposten.</p>
+
+      <form id="goalForm" class="admin-box" style="margin-top:14px;">
+        <label for="goalTitle">Neues Ziel</label>
+        <input type="text" id="goalTitle" placeholder="z. B. 3x Training pro Woche" />
+        <label for="goalPeriod">Zeitraum</label>
+        <select id="goalPeriod">
+          <option value="day">Tag</option>
+          <option value="week">Woche</option>
+          <option value="month">Monat</option>
+          <option value="year">Jahr</option>
+          <option value="five_years">5 Jahre</option>
+          <option value="lifetime">Lifetime</option>
+        </select>
+        <button type="submit">Ziel hinzufügen</button>
+      </form>
+
+      <div class="goals-layout" style="margin-top:14px;">
+        <div class="goals-card">
+          <h3>Aktive Ziele</h3>
+          <div id="activeGoalsBoard" class="goals-board"></div>
+        </div>
+
+        <div class="goals-card">
+          <h3>Abgelaufene Ziele</h3>
+          <p class="small-note">Aktionen: ✓ abgeschlossen, ✕ löschen, ↻ reposten</p>
+          <div id="expiredGoalsBoard" class="goals-board"></div>
+        </div>
+      </div>
+
+      <details class="goals-completed-menu" style="margin-top:14px;">
+        <summary>Menü: Abgeschlossene Ziele</summary>
+        <div id="completedGoalsBoard" class="goals-board" style="margin-top:12px;"></div>
+      </details>
+    </section>
+  </main>
+
+  <div class="modal-overlay" id="dayTimeboxModal">
+    <div class="modal day-timebox-modal" role="dialog" aria-modal="true" aria-labelledby="dayTimeboxTitle">
+      <header>
+        <div>
+          <h3 id="dayTimeboxTitle">Tages-Time-Box</h3>
+          <p id="dayTimeboxSubtitle" class="small-note"></p>
+          <p id="dayTimeboxConflicts" class="small-note"></p>
+        </div>
+        <button class="close-button secondary" id="closeDayTimebox" aria-label="Schließen">×</button>
+      </header>
+      <div class="day-timebox-wrapper">
+        <table class="day-timebox-table">
+          <thead>
+            <tr>
+              <th>Stunde</th>
+              <th>xx:00 - xx:29</th>
+              <th>xx:30 - xx:59</th>
+            </tr>
+          </thead>
+          <tbody id="dayTimeboxBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <footer class="footer-note">Chris Modus synchronisiert deinen Plan über Supabase (mit lokalem Fallback).</footer>
+  <script src="chris.js"></script>
+</body>
+</html>
