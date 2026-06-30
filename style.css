@@ -1,4 +1,68 @@
+.calendar-cell.has-items {
+  position: relative;
+  border-width: 1px;
+  border-style: solid;
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: none;
+  filter: none;
+  animation: none;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--term-color, #2f80ed) 26%, transparent),
+    color-mix(in srgb, var(--term-color, #2f80ed) 12%, transparent)
+  );
+}
+
+@keyframes priorityBorderGlow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px rgba(var(--importance-rgb, 78, 168, 222), 0.58),
+      0 0 var(--priority-glow-r1, 10px) rgba(var(--importance-rgb, 78, 168, 222), 0.4),
+      0 0 var(--priority-glow-r2, 16px) rgba(var(--importance-rgb, 78, 168, 222), 0.24);
+    filter: drop-shadow(0 0 4px rgba(var(--importance-rgb, 78, 168, 222), 0.34));
+  }
+
+  50% {
+    box-shadow: 0 0 0 1px rgba(var(--importance-rgb, 78, 168, 222), 0.72),
+      0 0 var(--priority-glow-r3, 14px) rgba(var(--importance-rgb, 78, 168, 222), 0.5),
+      0 0 var(--priority-glow-r4, 22px) rgba(var(--importance-rgb, 78, 168, 222), 0.3);
+    filter: drop-shadow(0 0 7px rgba(var(--importance-rgb, 78, 168, 222), 0.44));
+  }
+}
+
+.calendar-cell.importance-s {
+  --importance-border: #ff4d4f;
+  --importance-rgb: 255, 77, 79;
+}
+
+.calendar-cell.importance-r {
+  --importance-border: #4ea8de;
+  --importance-rgb: 78, 168, 222;
+}
+
+.calendar-cell.importance-n {
+  --importance-border: #ff9f43;
+  --importance-rgb: 255, 159, 67;
+}
+
+.importance-chip,
+.importance-badge,
+.importance-label,
+.todo-importance {
+  display: none !important;
+}
  :root {
+  /* Normal glow (mobile/tablet + fallback) */
+  --priority-glow-a1: 62%;
+  --priority-glow-a2: 72%;
+  --priority-glow-a3: 38%;
+  --priority-glow-b1: 82%;
+  --priority-glow-b2: 92%;
+  --priority-glow-b3: 50%;
+  --priority-glow-r1: 10px;
+  --priority-glow-r2: 16px;
+  --priority-glow-r3: 14px;
+  --priority-glow-r4: 22px;
   color-scheme: dark;
   --bg: #08101f;
   --surface: rgba(16, 28, 44, 0.94);
@@ -11,6 +75,22 @@
   --danger: #ff6b6b;
   --border: rgba(255, 255, 255, 0.1);
   --shadow: 0 24px 80px rgba(0, 0, 0, 0.24);
+}
+
+@media (min-width: 1024px) {
+  :root {
+    /* Ultra glow (desktop) */
+    --priority-glow-a1: 74%;
+    --priority-glow-a2: 88%;
+    --priority-glow-a3: 52%;
+    --priority-glow-b1: 96%;
+    --priority-glow-b2: 100%;
+    --priority-glow-b3: 64%;
+    --priority-glow-r1: 12px;
+    --priority-glow-r2: 18px;
+    --priority-glow-r3: 16px;
+    --priority-glow-r4: 26px;
+  }
 }
 
 * {
@@ -121,15 +201,15 @@ main {
 }
 
 .badge.importance-n {
-  border-color: rgba(122, 208, 255, 0.7);
-  background: rgba(122, 208, 255, 0.18);
-  color: #d5eeff;
-}
-
-.badge.importance-r {
   border-color: rgba(255, 159, 67, 0.7);
   background: rgba(255, 159, 67, 0.18);
   color: #ffe4c8;
+}
+
+.badge.importance-r {
+  border-color: rgba(122, 208, 255, 0.7);
+  background: rgba(122, 208, 255, 0.18);
+  color: #d5eeff;
 }
 
 .overview .stat {
@@ -432,7 +512,7 @@ button.danger {
   height: 12px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.07);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .calendar-preview-bar {
@@ -440,19 +520,51 @@ button.danger {
   top: 0;
   bottom: 0;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  z-index: 1;
+  border: 1px solid rgba(var(--importance-rgb, 78, 168, 222), 0.95);
+  background: color-mix(in srgb, var(--term-color, #7ad0ff) 52%, rgba(255, 255, 255, 0.04));
+  box-shadow: 0 0 0 1px rgba(var(--importance-rgb, 78, 168, 222), 0.86),
+    0 0 14px rgba(var(--importance-rgb, 78, 168, 222), 0.72),
+    0 0 24px rgba(var(--importance-rgb, 78, 168, 222), 0.48);
+  animation: calendarPreviewGlow 2.4s ease-in-out infinite;
 }
 
-.calendar-preview-bar.importance-s {
-  border-color: rgba(255, 107, 107, 0.95);
+.calendar-preview-bar::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 999px;
+  background: rgba(var(--importance-rgb, 78, 168, 222), 0.52);
+  filter: blur(5px);
+  z-index: -1;
+  pointer-events: none;
+  animation: calendarPreviewAura 2.4s ease-in-out infinite;
 }
 
-.calendar-preview-bar.importance-n {
-  border-color: rgba(122, 208, 255, 0.95);
+@keyframes calendarPreviewGlow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px rgba(var(--importance-rgb, 78, 168, 222), 0.62),
+      0 0 14px rgba(var(--importance-rgb, 78, 168, 222), 0.56),
+      0 0 22px rgba(var(--importance-rgb, 78, 168, 222), 0.34);
+  }
+  50% {
+    box-shadow: 0 0 0 1px rgba(var(--importance-rgb, 78, 168, 222), 0.84),
+      0 0 20px rgba(var(--importance-rgb, 78, 168, 222), 0.78),
+      0 0 32px rgba(var(--importance-rgb, 78, 168, 222), 0.52);
+  }
 }
 
-.calendar-preview-bar.importance-r {
-  border-color: rgba(255, 159, 67, 0.95);
+@keyframes calendarPreviewAura {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scaleY(1);
+  }
+  50% {
+    opacity: 0.82;
+    transform: scaleY(1.08);
+  }
 }
 
 .calendar-preview-label {
@@ -638,23 +750,38 @@ button.danger {
 .timebox-item {
   border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(10, 18, 32, 0.9);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--term-color, #7ad0ff) 30%, rgba(10, 18, 32, 0.9)),
+    rgba(10, 18, 32, 0.9)
+  );
   padding: 14px;
 }
 
-.timebox-item.importance-s {
-  border-color: rgba(255, 107, 107, 0.72);
-  box-shadow: inset 0 0 0 1px rgba(255, 107, 107, 0.24);
+.term-colored {
+  --term-color: #7ad0ff;
 }
 
-.timebox-item.importance-n {
-  border-color: rgba(122, 208, 255, 0.72);
-  box-shadow: inset 0 0 0 1px rgba(122, 208, 255, 0.24);
+@keyframes termBorderGlow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--importance-border, #4ea8de) var(--priority-glow-a2, 72%), transparent),
+      0 0 var(--priority-glow-r1, 20px) color-mix(in srgb, var(--importance-border, #4ea8de) var(--priority-glow-a3, 38%), transparent),
+      0 0 var(--priority-glow-r2, 34px) color-mix(in srgb, var(--importance-border, #4ea8de) 34%, transparent);
+  }
+
+  50% {
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--importance-border, #4ea8de) var(--priority-glow-b1, 82%), transparent),
+      0 0 var(--priority-glow-r3, 32px) color-mix(in srgb, var(--importance-border, #4ea8de) var(--priority-glow-b3, 50%), transparent),
+      0 0 var(--priority-glow-r4, 52px) color-mix(in srgb, var(--importance-border, #4ea8de) 42%, transparent);
+  }
 }
 
-.timebox-item.importance-r {
-  border-color: rgba(255, 159, 67, 0.78);
-  box-shadow: inset 0 0 0 1px rgba(255, 159, 67, 0.24);
+.timebox-item.term-colored {
+  border-color: rgba(var(--importance-rgb, 78, 168, 222), 0.98);
+  animation: none;
+  filter: none;
+  box-shadow: none;
 }
 
 .timebox-item header {
@@ -742,20 +869,10 @@ button.danger {
   top: 3px;
   bottom: 3px;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid color-mix(in srgb, var(--importance-border, #4ea8de) 84%, rgba(255, 255, 255, 0.2));
+  background: color-mix(in srgb, var(--term-color, #7ad0ff) 58%, rgba(255, 255, 255, 0.04));
+  box-shadow: none;
   min-width: 2px;
-}
-
-.segment-block.importance-s {
-  border-color: rgba(255, 107, 107, 0.95);
-}
-
-.segment-block.importance-n {
-  border-color: rgba(122, 208, 255, 0.95);
-}
-
-.segment-block.importance-r {
-  border-color: rgba(255, 159, 67, 0.95);
 }
 
 .segment-note {

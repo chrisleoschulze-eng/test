@@ -1,3 +1,31 @@
+function applyRenderedPlanColors() {
+  if (!state || !Array.isArray(state.plan)) return;
+  const byId = new Map(state.plan.map(item => [String(item.id || ''), item]));
+  document.querySelectorAll('[data-plan-id]').forEach(node => {
+    const id = String(node.getAttribute('data-plan-id') || '');
+    const item = byId.get(id);
+    if (!item) return;
+    const termColor = normalizeTermColor(item.color) || '#2F80ED';
+    node.classList.add('plan-item');
+    node.style.setProperty('--term-color', termColor);
+    node.classList.remove('importance-n', 'importance-r', 'importance-s');
+    node.classList.add(`importance-${normalizeImportance(item.importance)}`);
+  });
+}
+
+function initRenderedPlanColorObserver() {
+  if (window.__ksPlanColorObserverInitialized) return;
+  window.__ksPlanColorObserverInitialized = true;
+
+  const run = () => requestAnimationFrame(applyRenderedPlanColors);
+  const observer = new MutationObserver(run);
+  if (document.body) {
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
+  run();
+}
+
+document.addEventListener('DOMContentLoaded', initRenderedPlanColorObserver);
 const SUPABASE_URL = 'https://gpsnklnubbqkntseqeqb.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdwc25rbG51YmJxa250c2VxZXFiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MDQyNjgsImV4cCI6MjA5NzM4MDI2OH0.VICqdMCm4mknyBIoTdYbH-tQ7g408gpKl_zlVHPp7z4';
 const PLAN_CHAT_URL = `${SUPABASE_URL}/functions/v1/aria-chat`;
@@ -8,6 +36,26 @@ const STORAGE_CHRIS_TODOS = 'ks_chris_todos';
 const TABLE_CHRIS_PLAN = 'chris_plan_items';
 const TABLE_CHRIS_GOALS = 'chris_goals';
 const TABLE_CHRIS_TODOS = 'chris_todos';
+const TERM_COLOR_PALETTE = ['#ff6b6b', '#ff9f43', '#ffd166', '#7ad0ff', '#7ee787', '#ba9cff', '#ff7cc3', '#5de2e7'];
+const TERM_COLOR_NAME_MAP = {
+  rot: '#ff6b6b',
+  red: '#ff6b6b',
+  orange: '#ff9f43',
+  gelb: '#ffd166',
+  yellow: '#ffd166',
+  blau: '#7ad0ff',
+  blue: '#7ad0ff',
+  gruen: '#7ee787',
+  grün: '#7ee787',
+  green: '#7ee787',
+  lila: '#ba9cff',
+  violett: '#ba9cff',
+  purple: '#ba9cff',
+  pink: '#ff7cc3',
+  tuerkis: '#5de2e7',
+  türkis: '#5de2e7',
+  cyan: '#5de2e7'
+};
 
 const sbClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
@@ -45,17 +93,164 @@ function parseDateKey(value) {
   return new Date(y, m - 1, d);
 }
 
+function normalizeDateKey(value) {
+  const raw = String(value || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : '';
+}
+
 function parseTime(value) {
   const [h, m] = String(value || '00:00').split(':').map(Number);
   return (h * 60) + (m || 0);
 }
 
+function rangeEndDate(item) {
+  const start = normalizeDateKey(item?.date);
+  const end = normalizeDateKey(item?.endDate);
+  if (!start) return '';
+  if (!end || end < start) return start;
+  return end;
+}
+
+function occursOnDate(item, dateKey) {
+  const day = normalizeDateKey(dateKey);
+  const start = normalizeDateKey(item?.date);
+  const end = rangeEndDate(item);
+  if (!day || !start || !end) return false;
+  return day >= start && day <= end;
+}
+
+function projectPlanItemToDate(item, dateKey) {
+  if (!occursOnDate(item, dateKey)) return null;
+  const startDate = normalizeDateKey(item.date);
+  const endDate = rangeEndDate(item);
+
+  let start = String(item.start || '00:00').slice(0, 5);
+  let end = String(item.end || '23:59').slice(0, 5);
+
+  if (dateKey !== startDate) start = '00:00';
+  if (dateKey !== endDate) end = '23:59';
+
+  return {
+    ...item,
+    date: dateKey,
+    start,
+    end,
+    rangeStart: startDate,
+    rangeEnd: endDate,
+    multiDay: startDate !== endDate
+  };
+}
+
+function priorityBorderColor(value) {
+  const imp = normalizeImportance(value);
+  if (imp === 's') return '#ff4d4f';
+  if (imp === 'r') return '#4ea8de';
+  return '#ff9f43';
+}
+
+function priorityBorderRgb(value) {
+  const imp = normalizeImportance(value);
+  if (imp === 's') return '255, 77, 79';
+  if (imp === 'r') return '78, 168, 222';
+  return '255, 159, 67';
+}
+
 function normalizeImportance(value) {
   const v = String(value || '').trim().toLowerCase();
-  if (v === 'strict' || v === 's' || v === 'urgent' || v === 'urgend' || v === 'u') return 's';
-  if (v === 'reserved' || v === 'r' || v === 'reserve' || v === 'sometime') return 'r';
-  if (v === 'anytime' || v === 'a') return 'n';
+  if (v === 'strict' || v === 's' || v === 'urgent' || v === 'urgend' || v === 'u' || v === 'high' || v === 'hoch' || v === 'höchste' || v === 'highest') return 's';
+  if (v === 'reserved' || v === 'r' || v === 'reserve' || v === 'sometime' || v === 'medium' || v === 'mittel' || v === 'middle' || v === 'mid') return 'r';
+  if (v === 'anytime' || v === 'a' || v === 'low' || v === 'niedrig' || v === 'lowest') return 'n';
   return 'n';
+}
+
+
+function normalizeTermColor(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return '';
+  if (TERM_COLOR_NAME_MAP[raw]) return TERM_COLOR_NAME_MAP[raw];
+  const shortHex = raw.match(/^#([0-9a-f]{3})$/i);
+  if (shortHex) {
+    const c = shortHex[1];
+    return `#${c[0]}${c[0]}${c[1]}${c[1]}${c[2]}${c[2]}`.toLowerCase();
+  }
+  const longHex = raw.match(/^#([0-9a-f]{6})$/i);
+  if (longHex) return `#${longHex[1].toLowerCase()}`;
+  return '';
+}
+
+function extractRequestedTermColor(text) {
+  const value = String(text || '').toLowerCase();
+  if (!value) return '';
+  const hexMatch = value.match(/#([0-9a-f]{3}|[0-9a-f]{6})\b/i);
+  if (hexMatch) return normalizeTermColor(hexMatch[0]);
+
+  const nameOrder = Object.keys(TERM_COLOR_NAME_MAP).sort((a, b) => b.length - a.length);
+  for (const name of nameOrder) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const rx = new RegExp(`\\b${escaped}\\b`, 'i');
+    if (rx.test(value)) return TERM_COLOR_NAME_MAP[name];
+  }
+  return '';
+}
+
+function enrichUserPromptWithColorHint(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return raw;
+  const requestedColor = extractRequestedTermColor(raw);
+  if (!requestedColor) return raw;
+  return `${raw}\n\nFarbhinweis (verbindlich): Verwende für color den HEX-Wert ${requestedColor}.`;
+}
+
+function pickRandomTermColor(disallowed) {
+  const blocked = new Set((disallowed || []).map(c => normalizeTermColor(c)).filter(Boolean));
+  const available = TERM_COLOR_PALETTE.filter(color => !blocked.has(color));
+  const pool = available.length ? available : TERM_COLOR_PALETTE;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function assignMissingPlanColors(planItems) {
+  const normalized = (Array.isArray(planItems) ? planItems : []).map(normalizePlanItem).filter(Boolean);
+  const sorted = [...normalized].sort((a, b) => {
+    if (a.date !== b.date) return a.date.localeCompare(b.date);
+    return parseTime(a.start) - parseTime(b.start);
+  });
+
+  const seriesColors = new Map();
+  const result = [];
+  for (let index = 0; index < sorted.length; index += 1) {
+    const item = sorted[index];
+    const seriesId = String(item.seriesId || '').trim();
+    const existing = normalizeTermColor(item.color);
+
+    if (seriesId && existing) {
+      seriesColors.set(seriesId, existing);
+    }
+
+    if (seriesId && !existing && seriesColors.has(seriesId)) {
+      result.push({ ...item, color: seriesColors.get(seriesId) });
+      continue;
+    }
+
+    if (existing) {
+      result.push({ ...item, color: existing });
+      continue;
+    }
+
+    const prev = result[index - 1];
+    const next = sorted.slice(index + 1).find(candidate => candidate.date === item.date);
+    const blocked = new Set([
+      prev && prev.date === item.date ? normalizeTermColor(prev.color) : '',
+      normalizeTermColor(next?.color)
+    ].filter(Boolean));
+
+    const options = TERM_COLOR_PALETTE.filter(color => !blocked.has(color));
+    const palette = options.length ? options : TERM_COLOR_PALETTE;
+    const color = palette[Math.floor(Math.random() * palette.length)];
+    if (seriesId) seriesColors.set(seriesId, color);
+    result.push({ ...item, color });
+  }
+
+  return result;
 }
 
 function importanceLabel(value) {
@@ -99,17 +294,19 @@ function loadPlan() {
   try {
     const parsed = JSON.parse(localStorage.getItem(STORAGE_CHRIS_PLAN) || '[]');
     if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter(item => item && typeof item.date === 'string' && typeof item.start === 'string' && typeof item.end === 'string' && typeof item.title === 'string')
-      .map(item => ({
+      return assignMissingPlanColors(parsed.filter(item => item && typeof item.date === 'string' && typeof item.start === 'string' && typeof item.end === 'string' && typeof item.title === 'string')
+        .map(item => ({
         id: item.id || `plan-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         date: item.date,
         start: item.start,
         end: item.end,
         title: item.title,
         note: item.note || '',
-        importance: normalizeImportance(item.importance)
-      }));
+        importance: normalizeImportance(item.importance),
+        color: normalizeTermColor(item.color),
+        endDate: normalizeDateKey(item.endDate) || normalizeDateKey(item.date),
+        seriesId: String(item.seriesId || '')
+         })));
   } catch (error) {
     return [];
   }
@@ -127,7 +324,10 @@ function mapDbRowToPlanItem(row) {
     end: String(row.end_time).slice(0, 5),
     title: String(row.title || '').slice(0, 140),
     note: String(row.note || '').slice(0, 300),
-    importance: normalizeImportance(row.importance)
+    importance: normalizeImportance(row.importance),
+    color: normalizeTermColor(row.color),
+    endDate: normalizeDateKey(row.end_date) || String(row.plan_date).slice(0, 10),
+    seriesId: String(row.series_id || '')
   };
 }
 
@@ -140,6 +340,9 @@ function mapPlanItemToDbRow(item) {
     title: item.title,
     note: item.note || '',
     importance: normalizeImportance(item.importance),
+    color: normalizeTermColor(item.color) || null,
+    end_date: rangeEndDate(item),
+    series_id: item.seriesId ? String(item.seriesId).slice(0, 80) : null,
     updated_at: new Date().toISOString()
   };
 }
@@ -152,7 +355,7 @@ async function loadPlanFromSource() {
 
   const { data, error } = await sbClient
     .from(TABLE_CHRIS_PLAN)
-    .select('id, plan_date, start_time, end_time, title, note, importance')
+    .select('id, plan_date, start_time, end_time, title, note, importance, color, end_date, series_id')
     .order('plan_date', { ascending: true })
     .order('start_time', { ascending: true });
 
@@ -161,7 +364,7 @@ async function loadPlanFromSource() {
     return;
   }
 
-  state.plan = Array.isArray(data) ? data.map(mapDbRowToPlanItem) : [];
+  state.plan = Array.isArray(data) ? assignMissingPlanColors(data.map(mapDbRowToPlanItem)) : [];
   savePlanLocal();
 }
 
@@ -169,7 +372,8 @@ async function savePlan() {
   savePlanLocal();
   if (!sbClient) return;
 
-  const normalized = state.plan.map(normalizePlanItem).filter(Boolean);
+    const normalized = assignMissingPlanColors(state.plan.map(normalizePlanItem));
+  state.plan = normalized;
   const rows = normalized.map(mapPlanItemToDbRow);
   const keepIds = new Set(rows.map(row => row.id));
 
@@ -685,8 +889,10 @@ function renderCalendarMiniPreview(dayItems) {
     const safeEnd = Math.max(safeStart + 1, Math.min(1440, end));
     const left = (safeStart / 1440) * 100;
     const width = ((safeEnd - safeStart) / 1440) * 100;
-    const importance = normalizeImportance(item.importance);
-    return `<span class="calendar-preview-bar ${importanceClass(importance)}" style="left:${left}%;width:${Math.max(2, width)}%;background:${colorForItem(item)};" title="${escapeHtml(item.start)}-${escapeHtml(item.end)} ${escapeHtml(item.title)} (${importanceLabel(importance)})"></span>`;
+    const color = colorForItem(item);
+    const border = priorityBorderColor(item.importance);
+    const importanceRgb = priorityBorderRgb(item.importance);
+    return `<span class="calendar-preview-bar term-colored" style="left:${left}%;width:${Math.max(2, width)}%;--term-color:${color};--importance-border:${border};--importance-rgb:${importanceRgb};" title="${escapeHtml(item.start)}-${escapeHtml(item.end)} ${escapeHtml(item.title)}"></span>`;
   }).join('');
 
   const labels = sorted.slice(0, 2).map(item => `${item.start}-${item.end}`).join(' | ');
@@ -722,11 +928,17 @@ function renderCalendar() {
   for (let d = 1; d <= last.getDate(); d += 1) {
     const date = new Date(year, month, d);
     const key = formatDateKey(date);
-    const dayItems = state.plan.filter(item => item.date === key);
+    const dayItems = state.plan
+      .map(item => projectPlanItemToDate(item, key))
+      .filter(Boolean);
+    const strongestImportance = dayItems.some(item => normalizeImportance(item.importance) === 's')
+      ? 's'
+      : (dayItems.some(item => normalizeImportance(item.importance) === 'r') ? 'r' : 'n');
+    const hasItemsClass = dayItems.length ? `has-items importance-${strongestImportance}` : '';
     const selected = key === state.selectedDate;
     const today = key === todayKey;
     html += `
-      <button class="calendar-cell ${selected ? 'selected' : ''} ${today ? 'today' : ''}" data-date="${key}">
+      <button class="calendar-cell ${hasItemsClass} ${selected ? 'selected' : ''} ${today ? 'today' : ''}" data-date="${key}">
         <div class="calendar-cell-head">
           <span class="calendar-day">${d}</span>
           ${dayItems.length ? `<span class="calendar-dot">${dayItems.length}</span>` : ''}
@@ -746,7 +958,8 @@ function renderDayPlan() {
   if (!dateLabel || !list || !conflictsEl) return;
 
   const selectedItems = state.plan
-    .filter(item => item.date === state.selectedDate)
+    .map(item => projectPlanItemToDate(item, state.selectedDate))
+    .filter(Boolean)
     .sort((a, b) => parseTime(a.start) - parseTime(b.start));
 
   const selectedDateObj = parseDateKey(state.selectedDate);
@@ -765,21 +978,20 @@ function renderDayPlan() {
   }
 
   list.innerHTML = selectedItems.map(item => `
-    <article class="timebox-item ${importanceClass(item.importance)}">
+    <article class="timebox-item term-colored ${importanceClass(item.importance)}" style="--term-color:${colorForItem(item)};--importance-border:${priorityBorderColor(item.importance)};">
       <header>
         <strong>${escapeHtml(item.start)} - ${escapeHtml(item.end)}</strong>
-        <span class="badge ${importanceClass(item.importance)}">${escapeHtml(importanceLabel(item.importance))}</span>
       </header>
       <p>${escapeHtml(item.title)}</p>
+      ${item.multiDay ? `<p class="small-note">Mehrtägig: ${escapeHtml(item.rangeStart)} bis ${escapeHtml(item.rangeEnd)}</p>` : ''}
       ${item.note ? `<p class="small-note">${escapeHtml(item.note)}</p>` : ''}
     </article>
   `).join('');
 }
 
 function colorForItem(item) {
-  const imp = normalizeImportance(item?.importance);
-  if (imp === 's') return '#ff6b6b';
-  if (imp === 'r') return '#ff9f43';
+  const explicit = normalizeTermColor(item?.color);
+  if (explicit) return explicit;
   return '#7ad0ff';
 }
 
@@ -799,6 +1011,7 @@ function segmentBlocks(items, segStart, segEnd) {
         end: item.end,
         importance: normalizeImportance(item.importance),
         color: colorForItem(item),
+        borderColor: priorityBorderColor(item.importance),
         left: Math.max(0, Math.min(100, left)),
         width: Math.max(1, Math.min(100, width))
       };
@@ -810,7 +1023,7 @@ function renderSegmentCell(items, segStart, segEnd) {
   const blocks = segmentBlocks(items, segStart, segEnd);
   const blockHtml = blocks
     .map((block, index) => `
-      <span class="segment-block ${importanceClass(block.importance)}" style="left:${block.left}%; width:${block.width}%; background:${block.color}; top:${3 + (index * 2)}px;" title="${escapeHtml(block.start)}-${escapeHtml(block.end)} ${escapeHtml(block.title)} (${escapeHtml(importanceLabel(block.importance))})"></span>
+      <span class="segment-block term-colored" style="left:${block.left}%; width:${block.width}%; --term-color:${block.color}; --importance-border:${block.borderColor}; top:${3 + (index * 2)}px;" title="${escapeHtml(block.start)}-${escapeHtml(block.end)} ${escapeHtml(block.title)}"></span>
     `)
     .join('');
 
@@ -834,7 +1047,8 @@ function renderDayTimeboxModal() {
   subtitle.textContent = selectedDateObj.toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const dayItems = state.plan
-    .filter(item => item.date === state.selectedDate)
+    .map(item => projectPlanItemToDate(item, state.selectedDate))
+    .filter(Boolean)
     .sort((a, b) => parseTime(a.start) - parseTime(b.start));
 
   const conflicts = detectConflicts(dayItems);
@@ -1067,14 +1281,20 @@ function setMode(mode) {
 function normalizePlanItem(item) {
   if (!item || typeof item !== 'object') return null;
   if (!item.date || !item.start || !item.end || !item.title) return null;
+  const date = normalizeDateKey(item.date);
+  const endDate = normalizeDateKey(item.endDate) || date;
+  if (!date) return null;
   return {
     id: item.id || `plan-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    date: String(item.date).slice(0, 10),
+    date,
     start: String(item.start).slice(0, 5),
     end: String(item.end).slice(0, 5),
     title: String(item.title).slice(0, 140),
     note: String(item.note || '').slice(0, 300),
-    importance: normalizeImportance(item.importance)
+    importance: normalizeImportance(item.importance),
+    color: normalizeTermColor(item.color),
+    endDate: endDate < date ? date : endDate,
+    seriesId: String(item.seriesId || '')
   };
 }
 
@@ -1173,7 +1393,13 @@ function buildCalendarInsights(planItems) {
     .map(([date, items]) => {
       const preview = items
         .slice(0, 6)
-        .map(item => `${item.start}-${item.end} ${item.title} (${normalizeImportance(item.importance)})`)
+        .map(item => {
+          const endDate = rangeEndDate(item);
+          const span = endDate !== item.date ? ` ${item.date}->${endDate}` : '';
+          const color = normalizeTermColor(item.color);
+          const colorInfo = color ? ` color=${color}` : '';
+          return `${item.start}-${item.end} ${item.title}${span} (${normalizeImportance(item.importance)}${colorInfo})`;
+        })
         .join(' | ');
       const more = items.length > 6 ? ` | +${items.length - 6} weitere` : '';
       return `${date}: ${preview}${more}`;
@@ -1184,13 +1410,14 @@ function buildCalendarInsights(planItems) {
 }
 
 async function askPlanAI(userText) {
+  const enrichedUserText = enrichUserPromptWithColorHint(userText);
   const now = getNowContext();
   const normalizedPlan = state.plan.map(normalizePlanItem).filter(Boolean);
   const normalizedGoals = state.goals.map(normalizeGoal).filter(Boolean);
   const normalizedTodos = state.todos.map(normalizeTodo).filter(Boolean);
   const payload = {
     mode: 'plan',
-    message: userText,
+    message: enrichedUserText,
     plan: normalizedPlan,
     todos: normalizedTodos,
     todoInsights: buildTodoInsights(normalizedTodos),
@@ -1242,7 +1469,7 @@ async function askPlanAI(userText) {
 
   return {
     reply: data.reply,
-    updatedPlan: normalizedUpdatedPlan,
+    updatedPlan: Array.isArray(normalizedUpdatedPlan) ? assignMissingPlanColors(normalizedUpdatedPlan) : normalizedUpdatedPlan,
     updatedGoals: normalizedUpdatedGoals,
     updatedTodos: normalizedUpdatedTodos,
     conflicts: Array.isArray(data.conflicts) ? data.conflicts.slice(0, 6) : [],
