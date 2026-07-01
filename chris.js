@@ -1324,6 +1324,116 @@ function isBulkClearRequest(text) {
   return /(alle termine loeschen|alle termine löschen|kalender leeren|alles loeschen|alles löschen|clear calendar|wipe calendar)/.test(value);
 }
 
+function isBulkTodoClearRequest(text) {
+  const value = String(text || '').toLowerCase();
+  if (!value) return false;
+  return /(alle todos loeschen|alle todos löschen|todo liste leeren|todo-liste leeren|todos leeren|clear todos|wipe todos|alle aufgaben loeschen|alle aufgaben löschen)/.test(value);
+}
+
+function isBulkGoalClearRequest(text) {
+  const value = String(text || '').toLowerCase();
+  if (!value) return false;
+  return /(alle ziele loeschen|alle ziele löschen|ziele leeren|goals leeren|clear goals|wipe goals)/.test(value);
+}
+
+function todoIdentityKey(item) {
+  const normalized = normalizeTodo(item);
+  if (!normalized) return '';
+  return [
+    String(normalized.title || '').trim().toLowerCase(),
+    String(normalized.note || '').trim().toLowerCase(),
+    normalizeImportance(normalized.importance)
+  ].join('|');
+}
+
+function goalIdentityKey(item) {
+  const normalized = normalizeGoal(item);
+  if (!normalized) return '';
+  return [
+    String(normalized.title || '').trim().toLowerCase(),
+    normalizeGoalPeriod(normalized.period),
+    String(normalized.status || 'active').toLowerCase()
+  ].join('|');
+}
+
+function stabilizeUpdatedTodos(updatedTodos, currentTodos, userText) {
+  const current = (Array.isArray(currentTodos) ? currentTodos : []).map(normalizeTodo).filter(Boolean);
+  const incoming = (Array.isArray(updatedTodos) ? updatedTodos : []).map(normalizeTodo).filter(Boolean);
+  if (!incoming.length) return incoming;
+
+  const currentById = new Map(current.map(item => [String(item.id), item]));
+  const currentByKey = new Map(current.map(item => [todoIdentityKey(item), item]));
+
+  const stabilized = incoming.map(item => {
+    const rawId = String(item.id || '').trim();
+    if (rawId && currentById.has(rawId)) {
+      return { ...item, id: rawId };
+    }
+
+    const keyMatch = currentByKey.get(todoIdentityKey(item));
+    if (keyMatch?.id) {
+      return { ...item, id: keyMatch.id };
+    }
+
+    return { ...item, id: rawId || buildId('todo') };
+  });
+
+  const dedupById = new Map();
+  stabilized.forEach(item => dedupById.set(String(item.id), item));
+  const deduped = [...dedupById.values()];
+
+  const clearRequested = isBulkTodoClearRequest(userText);
+  const suspiciousPartial = !clearRequested
+    && current.length >= 4
+    && deduped.length > 0
+    && deduped.length < Math.ceil(current.length * 0.6);
+
+  if (!suspiciousPartial) return deduped;
+
+  const mergedById = new Map(current.map(item => [String(item.id), item]));
+  deduped.forEach(item => mergedById.set(String(item.id), item));
+  return [...mergedById.values()];
+}
+
+function stabilizeUpdatedGoals(updatedGoals, currentGoals, userText) {
+  const current = (Array.isArray(currentGoals) ? currentGoals : []).map(normalizeGoal).filter(Boolean);
+  const incoming = (Array.isArray(updatedGoals) ? updatedGoals : []).map(normalizeGoal).filter(Boolean);
+  if (!incoming.length) return incoming;
+
+  const currentById = new Map(current.map(item => [String(item.id), item]));
+  const currentByKey = new Map(current.map(item => [goalIdentityKey(item), item]));
+
+  const stabilized = incoming.map(item => {
+    const rawId = String(item.id || '').trim();
+    if (rawId && currentById.has(rawId)) {
+      return { ...item, id: rawId };
+    }
+
+    const keyMatch = currentByKey.get(goalIdentityKey(item));
+    if (keyMatch?.id) {
+      return { ...item, id: keyMatch.id };
+    }
+
+    return { ...item, id: rawId || buildId('goal') };
+  });
+
+  const dedupById = new Map();
+  stabilized.forEach(item => dedupById.set(String(item.id), item));
+  const deduped = [...dedupById.values()];
+
+  const clearRequested = isBulkGoalClearRequest(userText);
+  const suspiciousPartial = !clearRequested
+    && current.length >= 4
+    && deduped.length > 0
+    && deduped.length < Math.ceil(current.length * 0.6);
+
+  if (!suspiciousPartial) return deduped;
+
+  const mergedById = new Map(current.map(item => [String(item.id), item]));
+  deduped.forEach(item => mergedById.set(String(item.id), item));
+  return [...mergedById.values()];
+}
+
 function stabilizeUpdatedPlan(updatedPlan, currentPlan, userText) {
   const current = (Array.isArray(currentPlan) ? currentPlan : []).map(normalizePlanItem).filter(Boolean);
   const incoming = (Array.isArray(updatedPlan) ? updatedPlan : []).map(normalizePlanItem).filter(Boolean);
@@ -1575,11 +1685,11 @@ async function askPlanAI(userText) {
     : null;
 
   const normalizedUpdatedGoals = Array.isArray(data.updatedGoals)
-    ? data.updatedGoals.map(normalizeGoal).filter(Boolean)
+    ? stabilizeUpdatedGoals(data.updatedGoals, state.goals, userText)
     : null;
 
   const normalizedUpdatedTodos = Array.isArray(data.updatedTodos)
-    ? data.updatedTodos.map(normalizeTodo).filter(Boolean)
+    ? stabilizeUpdatedTodos(data.updatedTodos, state.todos, userText)
     : null;
 
   return {
