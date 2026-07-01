@@ -182,6 +182,11 @@ const state = {
   currentMode: 'submit'
 };
 
+const syncState = {
+  status: supabase ? 'connecting' : 'local-only',
+  message: ''
+};
+
 const elements = {
   taskList: document.getElementById('taskList'),
   solvedList: document.getElementById('solvedList'),
@@ -201,8 +206,36 @@ const elements = {
   validationChoice: document.getElementById('validationChoice'),
   solutionFileInput: document.getElementById('solutionFileInput'),
   solutionFileMeta: document.getElementById('solutionFileMeta'),
-  closeModalButton: document.getElementById('closeModalButton')
+  closeModalButton: document.getElementById('closeModalButton'),
+  syncStatus: document.getElementById('syncStatus')
 };
+
+function renderSyncStatus() {
+  if (!elements.syncStatus) return;
+
+  const textMap = {
+    connecting: 'Synchronisiere mit Server...',
+    connected: 'Server verbunden und synchron',
+    fallback: 'Offline-Fallback aktiv (lokal zwischengespeichert)',
+    'local-only': 'Server nicht verfügbar (nur lokaler Modus)'
+  };
+
+  const classMap = {
+    connecting: 'is-connecting',
+    connected: 'is-connected',
+    fallback: 'is-fallback',
+    'local-only': 'is-local-only'
+  };
+
+  elements.syncStatus.className = `sync-status ${classMap[syncState.status] || 'is-connecting'}`;
+  elements.syncStatus.textContent = syncState.message || textMap[syncState.status] || textMap.connecting;
+}
+
+function setSyncStatus(status, message = '') {
+  syncState.status = status;
+  syncState.message = message;
+  renderSyncStatus();
+}
 
 function formatIsoDate(date) {
   const d = new Date(date);
@@ -381,6 +414,7 @@ async function loadState() {
   state.adminPassword = localStorage.getItem(STORAGE_ADMIN_PASSWORD) || ADMIN_PASSWORD;
 
   if (!supabase) {
+    setSyncStatus('local-only');
     const tasksFromStorage = localStorage.getItem(STORAGE_TASKS);
     state.tasks = tasksFromStorage ? mergeDefaultTasks(JSON.parse(tasksFromStorage)) : defaultTasks.map(normalizeTask);
     const tipFromStorage = localStorage.getItem(STORAGE_TIP);
@@ -408,6 +442,7 @@ async function loadState() {
   }
 
   try {
+    setSyncStatus('connecting');
     const { data: tasksData, error: tasksError } = await supabase.from('tasks').select('*');
     if (tasksError) throw tasksError;
 
@@ -430,8 +465,10 @@ async function loadState() {
     state.tip = (tipData && tipData.length > 0) ? tipData[0] : defaultTip;
     await loadChatUsers();
     await loadChatMessages();
+    setSyncStatus('connected');
   } catch (error) {
     console.error('Supabase Error, using fallback:', error);
+    setSyncStatus('fallback');
     const tasksFromStorage = localStorage.getItem(STORAGE_TASKS);
     state.tasks = tasksFromStorage ? mergeDefaultTasks(JSON.parse(tasksFromStorage)) : defaultTasks.map(normalizeTask);
     const tipFromStorage = localStorage.getItem(STORAGE_TIP);
@@ -545,8 +582,10 @@ async function saveTasks() {
       .from('tasks')
       .upsert(dbTasks, { onConflict: 'id' });
     if (error) throw error;
+    setSyncStatus('connected');
   } catch (error) {
     console.error('Supabase save failed, using localStorage:', error);
+    setSyncStatus('fallback');
   }
 }
 
@@ -560,8 +599,10 @@ async function saveTip() {
   try {
     const { error } = await supabase.from('tips').insert([state.tip]);
     if (error && error.code !== '23505') throw error; // 23505 = duplicate key
+    setSyncStatus('connected');
   } catch (error) {
     console.error('Supabase tip save failed, using localStorage:', error);
+    setSyncStatus('fallback');
   }
 }
 
@@ -588,13 +629,16 @@ async function refreshRemoteState() {
     renderTip();
     renderTodayActions();
     renderAdminContent();
+    setSyncStatus('connected');
   } catch (error) {
     console.warn('Realtime sync refresh failed:', error);
+    setSyncStatus('fallback');
   }
 }
 
 function setupRealtimeSync() {
   if (!supabase || !supabase.channel) {
+    setSyncStatus('local-only');
     window.addEventListener('focus', refreshRemoteState);
     return;
   }
@@ -608,6 +652,7 @@ function setupRealtimeSync() {
     .subscribe(status => {
       if (status === 'SUBSCRIBED') {
         console.log('Supabase Realtime sync aktiv');
+        setSyncStatus('connected');
       }
     });
 
@@ -1777,6 +1822,7 @@ function initializeEvents() {
 }
 
 async function init() {
+  renderSyncStatus();
   await loadState();
   renderTasks();
   renderSolved();
@@ -1786,6 +1832,12 @@ async function init() {
   initializeEvents();
   setupRealtimeSync();
   displayStorageInfo();
+
+  window.addEventListener('offline', () => setSyncStatus('fallback', 'Offline-Fallback aktiv (keine Internetverbindung)'));
+  window.addEventListener('online', () => {
+    setSyncStatus(supabase ? 'connecting' : 'local-only');
+    refreshRemoteState();
+  });
 }
 
 init();

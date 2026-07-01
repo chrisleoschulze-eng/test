@@ -72,8 +72,11 @@ const state = {
   selectedDate: formatDateKey(new Date()),
   viewDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
   chat: loadChatHistory(),
-  mode: 'view'
+  mode: 'view',
+  pendingPriorityPrompt: null
 };
+
+let suppressPlanRealtimeUntil = 0;
 
 function buildId(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -369,11 +372,13 @@ async function loadPlanFromSource() {
 }
 
 async function savePlan() {
+  suppressPlanRealtimeUntil = Date.now() + 1800;
+  const normalized = assignMissingPlanColors(state.plan.map(normalizePlanItem));
+  state.plan = normalized;
   savePlanLocal();
+
   if (!sbClient) return;
 
-    const normalized = assignMissingPlanColors(state.plan.map(normalizePlanItem));
-  state.plan = normalized;
   const rows = normalized.map(mapPlanItemToDbRow);
   const keepIds = new Set(rows.map(row => row.id));
 
@@ -1298,6 +1303,66 @@ function normalizePlanItem(item) {
   };
 }
 
+function planIdentityKey(item) {
+  const normalized = normalizePlanItem(item);
+  if (!normalized) return '';
+  const titleKey = String(normalized.title || '').trim().toLowerCase();
+  const seriesKey = String(normalized.seriesId || '').trim().toLowerCase();
+  return [
+    normalized.date,
+    rangeEndDate(normalized),
+    normalized.start,
+    normalized.end,
+    titleKey,
+    seriesKey
+  ].join('|');
+}
+
+function isBulkClearRequest(text) {
+  const value = String(text || '').toLowerCase();
+  if (!value) return false;
+  return /(alle termine loeschen|alle termine löschen|kalender leeren|alles loeschen|alles löschen|clear calendar|wipe calendar)/.test(value);
+}
+
+function stabilizeUpdatedPlan(updatedPlan, currentPlan, userText) {
+  const current = (Array.isArray(currentPlan) ? currentPlan : []).map(normalizePlanItem).filter(Boolean);
+  const incoming = (Array.isArray(updatedPlan) ? updatedPlan : []).map(normalizePlanItem).filter(Boolean);
+  if (!incoming.length) return incoming;
+
+  const currentById = new Map(current.map(item => [String(item.id), item]));
+  const currentByKey = new Map(current.map(item => [planIdentityKey(item), item]));
+
+  const stabilized = incoming.map(item => {
+    const rawId = String(item.id || '').trim();
+    if (rawId && currentById.has(rawId)) {
+      return { ...item, id: rawId };
+    }
+
+    const keyMatch = currentByKey.get(planIdentityKey(item));
+    if (keyMatch?.id) {
+      return { ...item, id: keyMatch.id };
+    }
+
+    return { ...item, id: rawId || buildId('plan') };
+  });
+
+  const dedupById = new Map();
+  stabilized.forEach(item => dedupById.set(String(item.id), item));
+  const deduped = [...dedupById.values()];
+
+  const clearRequested = isBulkClearRequest(userText);
+  const suspiciousPartial = !clearRequested
+    && current.length >= 4
+    && deduped.length > 0
+    && deduped.length < Math.ceil(current.length * 0.6);
+
+  if (!suspiciousPartial) return deduped;
+
+  const mergedById = new Map(current.map(item => [String(item.id), item]));
+  deduped.forEach(item => mergedById.set(String(item.id), item));
+  return [...mergedById.values()];
+}
+
 function isQuestionOnlyPrompt(text) {
   const value = String(text || '').trim().toLowerCase();
   if (!value) return false;
@@ -1344,6 +1409,56 @@ function isInternetLookupRequest(text) {
   const eventLike = /(marathon|lauf|rennen|event|konzert|messe|meisterschaft|festival|conference|konferenz)/.test(value);
   const explicitWeb = /(internet|online|nachgucken|recherchier|recherchiere|such im web|google)/.test(value);
   return (asksDate && eventLike) || explicitWeb;
+}
+
+function extractExplicitImportance(text) {
+  const value = String(text || '').trim().toLowerCase();
+  if (!value) return null;
+
+  if (/(priorit[aä]t\s*[:=]?\s*(hoch|high|urgent|strict|s)\b|\b(hoch|high|urgent|strict)\b)/.test(value)) return 's';
+  if (/(priorit[aä]t\s*[:=]?\s*(mittel|medium|reserved|sometime|r)\b|\b(mittel|medium|reserved|sometime)\b)/.test(value)) return 'r';
+  if (/(priorit[aä]t\s*[:=]?\s*(niedrig|low|anytime|n)\b|\b(niedrig|low|anytime)\b)/.test(value)) return 'n';
+
+  return null;
+}
+
+function isPlanMutationPrompt(text) {
+  const value = String(text || '').trim().toLowerCase();
+  if (!value) return false;
+
+  const hasMutationVerb = /(verschieb|aendere|ändere|erstelle|fueg|füg|loesch|lösch|setze|plane|trag\s*ein|eintragen|anlegen|ergaenz|ergänz|update)/.test(value);
+  const hasPlanContext = /(termin|kalender|aktivitaet|aktivität|uhr|von\s+\d{1,2}:\d{2}|bis\s+\d{1,2}:\d{2}|heute|morgen|uebermorgen|übermorgen|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag|\d{4}-\d{2}-\d{2})/.test(value);
+  return hasMutationVerb && hasPlanContext;
+}
+
+function shouldAskForPriority(text) {
+  if (!isPlanMutationPrompt(text)) return false;
+  if (isQuestionOnlyPrompt(text)) return false;
+  if (isTodoSchedulingQuestion(text)) return false;
+  if (isGoalRequest(text)) return false;
+  return !extractExplicitImportance(text);
+}
+
+function priorityPromptLabel(code) {
+  if (code === 's') return 'hoch (strict / s)';
+  if (code === 'r') return 'mittel (reserved / r)';
+  return 'niedrig (anytime / n)';
+}
+
+function isMultiDayPlanPrompt(text) {
+  const value = String(text || '').trim().toLowerCase();
+  if (!value) return false;
+  if (/(mehrt[aä]gig|mehrtaegig|mehrere tage|ganzt[aä]gig|ganztag|serie|wiederholt|t[aä]glich|w[öo]chentlich)/.test(value)) return true;
+  if (/\b(von|ab)\b.*\b(bis)\b/.test(value)) return true;
+  if (/\d{4}-\d{2}-\d{2}\s*(bis|-)\s*\d{4}-\d{2}-\d{2}/.test(value)) return true;
+  return false;
+}
+
+function buildPriorityQuestion(text) {
+  if (isMultiDayPlanPrompt(text)) {
+    return 'Welche Priorität soll ich für den mehrtägigen Termin setzen? Bitte antworte mit hoch (strict/s), mittel (reserved/r) oder niedrig (anytime/n).';
+  }
+  return 'Welche Priorität soll ich setzen? Bitte antworte mit hoch (strict/s), mittel (reserved/r) oder niedrig (anytime/n).';
 }
 
 function buildGoalsInsights(goals) {
@@ -1456,7 +1571,7 @@ async function askPlanAI(userText) {
   }
 
   const normalizedUpdatedPlan = Array.isArray(data.updatedPlan)
-    ? data.updatedPlan.map(normalizePlanItem).filter(Boolean)
+    ? stabilizeUpdatedPlan(data.updatedPlan, state.plan, userText)
     : null;
 
   const normalizedUpdatedGoals = Array.isArray(data.updatedGoals)
@@ -1486,6 +1601,74 @@ async function handlePlanChatSubmit(event) {
   input.value = '';
   state.chat.push({ role: 'user', content: text });
   appendChatMessage('Du', escapeHtml(text), 'user');
+
+  if (state.pendingPriorityPrompt) {
+    const selectedPriority = extractExplicitImportance(text);
+    if (!selectedPriority) {
+      const askAgain = 'Ich brauche noch eine Priorität: hoch (strict/s), mittel (reserved/r) oder niedrig (anytime/n).';
+      state.chat.push({ role: 'assistant', content: escapeHtml(askAgain) });
+      saveChatHistory();
+      appendChatMessage('Plan-KI', escapeHtml(askAgain), 'assistant');
+      return;
+    }
+
+    const pendingInstruction = state.pendingPriorityPrompt;
+    state.pendingPriorityPrompt = null;
+    const combinedText = `${pendingInstruction}\n\nPriorität (verbindlich): ${priorityPromptLabel(selectedPriority)}.`;
+
+    let result;
+    try {
+      result = await askPlanAI(combinedText);
+    } catch (error) {
+      result = { reply: 'Die Verbindung zur Plan-KI ist gerade gestört. Bitte versuche es erneut.', updatedPlan: null, conflicts: [], questions: [] };
+    }
+
+    if (result.updatedPlan) {
+      state.plan = result.updatedPlan;
+      await savePlan();
+      renderCalendar();
+      renderDayPlan();
+      renderTodoBoard();
+      if (document.getElementById('dayTimeboxModal')?.classList.contains('open')) {
+        renderDayTimeboxModal();
+      }
+    }
+
+    if (result.updatedGoals) {
+      state.goals = result.updatedGoals;
+      await saveGoals();
+      renderGoalsBoard();
+    }
+
+    if (result.updatedTodos) {
+      state.todos = result.updatedTodos;
+      await saveTodos();
+      renderTodoBoard();
+    }
+
+    const extra = [];
+    if (result.conflicts?.length) {
+      extra.push(`<p class="small-note" style="color:#ffb347;"><strong>Überschneidungen:</strong> ${escapeHtml(result.conflicts.join(' | '))}</p>`);
+    }
+    if (result.questions?.length) {
+      extra.push(`<p class="small-note"><strong>Rückfragen:</strong> ${escapeHtml(result.questions.join(' | '))}</p>`);
+    }
+
+    const answerHtml = `${escapeHtml(result.reply)}${extra.join('')}`;
+    state.chat.push({ role: 'assistant', content: answerHtml });
+    saveChatHistory();
+    appendChatMessage('Plan-KI', answerHtml, 'assistant');
+    return;
+  }
+
+  if (shouldAskForPriority(text)) {
+    state.pendingPriorityPrompt = text;
+    const askPriority = buildPriorityQuestion(text);
+    state.chat.push({ role: 'assistant', content: escapeHtml(askPriority) });
+    saveChatHistory();
+    appendChatMessage('Plan-KI', escapeHtml(askPriority), 'assistant');
+    return;
+  }
 
   let result;
   try {
@@ -1578,6 +1761,7 @@ function setupPlanRealtime() {
   sbClient
     .channel('chris-plan-sync')
     .on('postgres_changes', { event: '*', schema: 'public', table: TABLE_CHRIS_PLAN }, async () => {
+      if (Date.now() < suppressPlanRealtimeUntil) return;
       await loadPlanFromSource();
       renderCalendar();
       renderDayPlan();
