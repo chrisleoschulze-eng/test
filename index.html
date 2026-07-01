@@ -3,15 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
   <title>Meine Challenge Aufgaben</title>
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
   <header>
-  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <h1>Challenge Aufgaben & Lösungsarchiv</h1>
     <p>Diese Website begleitet dich als einzelner Nutzer durch Aufgaben, Tipps und persönliche Erfolge. Reiche Lösungen ein, sieh dir erledigte Aufgaben an und verwalte neue Inhalte als Admin.</p>
+    <div class="sync-status" id="syncStatus" aria-live="polite"></div>
   </header>
 
   <main>
@@ -104,7 +105,7 @@
     </div>
   </div>
 
-  <footer class="footer-note">Die Website speichert Aufgaben und Lösungen lokal im Browser. Für echte Nutzerverwaltung ist ein Server nötig.</footer>
+  <footer class="footer-note">Aufgaben, Lösungen und Nutzerdaten werden über den Server synchronisiert. Bei Verbindungsproblemen wird vorübergehend lokal zwischengespeichert.</footer>
 
   <script src="script.js"></script>
 </body>

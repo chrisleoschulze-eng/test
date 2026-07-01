@@ -38,7 +38,7 @@
 
   <main class="admin-page">
     <section class="card">
-      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+      <div class="top-row">
         <div>
           <h2>Dein Planbereich</h2>
           <p class="small-note">Wähle zwischen Kalenderansicht und KI-gestützter Planbearbeitung.</p>
@@ -46,7 +46,7 @@
         <a class="button-link" href="admin.html">← Zurück zum Admin-Menü</a>
       </div>
 
-      <div class="actions" style="margin-top: 16px;">
+      <div class="actions mode-actions">
         <button id="openPlanView" class="secondary">Plan ansehen</button>
         <button id="openPlanEdit" class="secondary">KI Modus</button>
         <button id="openTodoView" class="secondary">To Do</button>
@@ -63,38 +63,38 @@
           <button id="nextMonth" class="secondary">▶</button>
         </div>
       </div>
-      <div id="calendarGrid" class="calendar-grid" style="margin-top:16px;"></div>
-      <div class="importance-legend" style="margin-top:10px;">
+      <div id="calendarGrid" class="calendar-grid"></div>
+      <div class="importance-legend">
         <span class="badge importance-s">Hoch (rot leuchtend)</span>
         <span class="badge importance-r">Mittel (blau leuchtend)</span>
         <span class="badge importance-n">Niedrig (orange leuchtend)</span>
       </div>
-      <p class="small-note" style="margin-top:10px;">Tippe auf einen Tag, um die Time-Box-Tagesansicht als Popup zu öffnen.</p>
+      <p class="small-note calendar-hint">Tippe auf einen Tag, um die Time-Box-Tagesansicht als Popup zu öffnen.</p>
 
-      <div class="card" style="margin-top:18px; background:rgba(8,16,30,0.75);">
+      <div class="card day-card">
         <h3 id="selectedDateLabel">Tag</h3>
         <div id="selectedDayConflicts" class="small-note"></div>
-        <div id="dayPlanList" class="timebox-list" style="margin-top:12px;"></div>
+        <div id="dayPlanList" class="timebox-list day-list"></div>
       </div>
     </section>
 
-    <section id="planEditSection" class="card" style="display:none;">
+    <section id="planEditSection" class="card mode-section" style="display:none;">
       <h2>KI Modus</h2>
       <p class="small-note">Gib Anweisungen wie „Morgen 09:00-11:00 Deep Work“ oder stelle Fragen zu deinem Plan.</p>
-      <div id="planChatLog" class="task-list" style="margin-top:14px; max-height:440px; overflow-y:auto;"></div>
+      <div id="planChatLog" class="task-list plan-chat-log"></div>
 
-      <form id="planChatForm" class="admin-box" style="margin-top:16px;">
+      <form id="planChatForm" class="admin-box mode-form">
         <label for="planChatInput">Deine Nachricht an den Plan-Assistenten</label>
         <textarea id="planChatInput" rows="3" placeholder="z. B. Verschiebe mein Meeting am Freitag auf 15:00-16:00"></textarea>
         <button type="submit">Senden</button>
       </form>
     </section>
 
-    <section id="todoSection" class="card" style="display:none;">
+    <section id="todoSection" class="card mode-section" style="display:none;">
       <h2>To Do</h2>
       <p class="small-note">To Dos sind getrennt vom Kalender und nach Wichtigkeit sortiert: strict, reserved, negotiable.</p>
 
-      <form id="todoForm" class="admin-box" style="margin-top:14px;">
+      <form id="todoForm" class="admin-box mode-form">
         <label for="todoTitle">Neues To Do</label>
         <input type="text" id="todoTitle" placeholder="z. B. Steuerunterlagen sortieren" />
         <label for="todoImportance">Wichtigkeit</label>
@@ -108,20 +108,20 @@
         <button type="submit">To Do hinzufügen</button>
       </form>
 
-      <div id="todoSummary" class="small-note" style="margin-top:10px;"></div>
-      <div id="todoBoard" class="todo-board" style="margin-top:14px;"></div>
+      <div id="todoSummary" class="small-note board-summary"></div>
+      <div id="todoBoard" class="todo-board board-content"></div>
 
-      <details class="goals-completed-menu" style="margin-top:14px;">
+      <details class="goals-completed-menu mode-details">
         <summary>Erledigte Todos</summary>
-        <div id="completedTodoBoard" class="todo-board" style="margin-top:12px;"></div>
+        <div id="completedTodoBoard" class="todo-board details-content"></div>
       </details>
     </section>
 
-    <section id="goalsSection" class="card" style="display:none;">
+    <section id="goalsSection" class="card mode-section" style="display:none;">
       <h2>Ziele</h2>
       <p class="small-note">Lege Ziele für Tag, Woche, Monat, Jahr, 5 Jahre oder Lifetime an. Abgelaufene Ziele kannst du bestätigen, löschen oder reposten.</p>
 
-      <form id="goalForm" class="admin-box" style="margin-top:14px;">
+      <form id="goalForm" class="admin-box mode-form">
         <label for="goalTitle">Neues Ziel</label>
         <input type="text" id="goalTitle" placeholder="z. B. 3x Training pro Woche" />
         <label for="goalPeriod">Zeitraum</label>
@@ -136,7 +136,7 @@
         <button type="submit">Ziel hinzufügen</button>
       </form>
 
-      <div class="goals-layout" style="margin-top:14px;">
+      <div class="goals-layout goals-layout-spaced">
         <div class="goals-card">
           <h3>Aktive Ziele</h3>
           <div id="activeGoalsBoard" class="goals-board"></div>
@@ -149,9 +149,9 @@
         </div>
       </div>
 
-      <details class="goals-completed-menu" style="margin-top:14px;">
+      <details class="goals-completed-menu mode-details">
         <summary>Menü: Abgeschlossene Ziele</summary>
-        <div id="completedGoalsBoard" class="goals-board" style="margin-top:12px;"></div>
+        <div id="completedGoalsBoard" class="goals-board details-content"></div>
       </details>
     </section>
   </main>
@@ -181,7 +181,7 @@
     </div>
   </div>
 
-  <footer class="footer-note">Chris Modus synchronisiert deinen Plan über Supabase (mit lokalem Fallback).</footer>
+  <footer class="footer-note">Chris Modus hält deinen Plan auf all deinen Geräten aktuell.</footer>
   <script src="chris.js"></script>
 </body>
 </html>
