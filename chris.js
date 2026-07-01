@@ -371,7 +371,7 @@ async function loadPlanFromSource() {
   savePlanLocal();
 }
 
-async function savePlan() {
+async function savePlan(removedIds = []) {
   suppressPlanRealtimeUntil = Date.now() + 1800;
   const normalized = assignMissingPlanColors(state.plan.map(normalizePlanItem));
   state.plan = normalized;
@@ -380,7 +380,6 @@ async function savePlan() {
   if (!sbClient) return;
 
   const rows = normalized.map(mapPlanItemToDbRow);
-  const keepIds = new Set(rows.map(row => row.id));
 
   if (rows.length > 0) {
     const { error: upsertError } = await sbClient
@@ -392,24 +391,15 @@ async function savePlan() {
     }
   }
 
-  const { data: existingRows, error: existingError } = await sbClient
-    .from(TABLE_CHRIS_PLAN)
-    .select('id');
+  const explicitRemoveIds = Array.isArray(removedIds)
+    ? removedIds.map(id => String(id || '').trim()).filter(Boolean)
+    : [];
 
-  if (existingError) {
-    console.error('Plan-Lesen für Sync fehlgeschlagen:', existingError.message);
-    return;
-  }
-
-  const removeIds = (existingRows || [])
-    .map(row => row.id)
-    .filter(id => !keepIds.has(id));
-
-  if (removeIds.length > 0) {
+  if (explicitRemoveIds.length > 0) {
     const { error: deleteError } = await sbClient
       .from(TABLE_CHRIS_PLAN)
       .delete()
-      .in('id', removeIds);
+      .in('id', explicitRemoveIds);
     if (deleteError) {
       console.error('Plan-Löschen für Sync fehlgeschlagen:', deleteError.message);
     }
@@ -511,13 +501,12 @@ async function loadTodosFromSource() {
   saveTodosLocal();
 }
 
-async function saveTodos() {
+async function saveTodos(removedIds = []) {
   saveTodosLocal();
   if (!sbClient) return;
 
   const normalized = state.todos.map(normalizeTodo).filter(Boolean);
   const rows = normalized.map(mapTodoItemToDbRow).filter(Boolean);
-  const keepIds = new Set(rows.map(row => row.id));
 
   if (rows.length > 0) {
     const { error: upsertError } = await sbClient
@@ -529,21 +518,15 @@ async function saveTodos() {
     }
   }
 
-  const { data: existingRows, error: existingError } = await sbClient
-    .from(TABLE_CHRIS_TODOS)
-    .select('id');
+  const explicitRemoveIds = Array.isArray(removedIds)
+    ? removedIds.map(id => String(id || '').trim()).filter(Boolean)
+    : [];
 
-  if (existingError) {
-    console.error('Todos-Lesen für Sync fehlgeschlagen:', existingError.message);
-    return;
-  }
-
-  const removeIds = (existingRows || []).map(row => row.id).filter(id => !keepIds.has(id));
-  if (removeIds.length > 0) {
+  if (explicitRemoveIds.length > 0) {
     const { error: deleteError } = await sbClient
       .from(TABLE_CHRIS_TODOS)
       .delete()
-      .in('id', removeIds);
+      .in('id', explicitRemoveIds);
     if (deleteError) {
       console.error('Todos-Löschen für Sync fehlgeschlagen:', deleteError.message);
     }
@@ -675,13 +658,12 @@ async function loadGoalsFromSource() {
   saveGoalsLocal();
 }
 
-async function saveGoals() {
+async function saveGoals(removedIds = []) {
   saveGoalsLocal();
   if (!sbClient) return;
 
   const normalized = state.goals.map(normalizeGoal).filter(Boolean);
   const rows = normalized.map(mapGoalItemToDbRow).filter(Boolean);
-  const keepIds = new Set(rows.map(row => row.id));
 
   if (rows.length > 0) {
     const { error: upsertError } = await sbClient
@@ -693,21 +675,15 @@ async function saveGoals() {
     }
   }
 
-  const { data: existingRows, error: existingError } = await sbClient
-    .from(TABLE_CHRIS_GOALS)
-    .select('id');
+  const explicitRemoveIds = Array.isArray(removedIds)
+    ? removedIds.map(id => String(id || '').trim()).filter(Boolean)
+    : [];
 
-  if (existingError) {
-    console.error('Goals-Lesen für Sync fehlgeschlagen:', existingError.message);
-    return;
-  }
-
-  const removeIds = (existingRows || []).map(row => row.id).filter(id => !keepIds.has(id));
-  if (removeIds.length > 0) {
+  if (explicitRemoveIds.length > 0) {
     const { error: deleteError } = await sbClient
       .from(TABLE_CHRIS_GOALS)
       .delete()
-      .in('id', removeIds);
+      .in('id', explicitRemoveIds);
     if (deleteError) {
       console.error('Goals-Löschen für Sync fehlgeschlagen:', deleteError.message);
     }
@@ -837,6 +813,7 @@ async function handleGoalActionClick(event) {
   if (index < 0) return;
 
   const nowIso = new Date().toISOString();
+  const removedIds = [];
   if (action === 'complete') {
     state.goals[index].status = 'completed';
     state.goals[index].completedAt = nowIso;
@@ -844,6 +821,7 @@ async function handleGoalActionClick(event) {
   }
 
   if (action === 'delete') {
+    removedIds.push(String(state.goals[index].id));
     state.goals.splice(index, 1);
   }
 
@@ -855,7 +833,7 @@ async function handleGoalActionClick(event) {
     state.goals[index].repostCount = Number(state.goals[index].repostCount || 0) + 1;
   }
 
-  await saveGoals();
+  await saveGoals(removedIds);
   renderGoalsBoard();
 }
 
@@ -1235,6 +1213,7 @@ async function handleTodoActionClick(event) {
   if (index < 0) return;
 
   const nowIso = new Date().toISOString();
+  const removedIds = [];
   if (action === 'complete') {
     state.todos[index].status = 'completed';
     state.todos[index].completedAt = nowIso;
@@ -1242,10 +1221,11 @@ async function handleTodoActionClick(event) {
   }
 
   if (action === 'delete') {
+    removedIds.push(String(state.todos[index].id));
     state.todos.splice(index, 1);
   }
 
-  await saveTodos();
+  await saveTodos(removedIds);
   renderTodoBoard();
 }
 
@@ -1734,8 +1714,11 @@ async function handlePlanChatSubmit(event) {
     }
 
     if (result.updatedPlan) {
+      const existingPlanIds = new Set(state.plan.map(item => String(item?.id || '')).filter(Boolean));
       state.plan = result.updatedPlan;
-      await savePlan();
+      const nextPlanIds = new Set(state.plan.map(item => String(item?.id || '')).filter(Boolean));
+      const removedPlanIds = [...existingPlanIds].filter(id => !nextPlanIds.has(id));
+      await savePlan(removedPlanIds);
       renderCalendar();
       renderDayPlan();
       renderTodoBoard();
@@ -1745,14 +1728,20 @@ async function handlePlanChatSubmit(event) {
     }
 
     if (result.updatedGoals) {
+      const existingGoalIds = new Set(state.goals.map(goal => String(goal?.id || '')).filter(Boolean));
       state.goals = result.updatedGoals;
-      await saveGoals();
+      const nextGoalIds = new Set(state.goals.map(goal => String(goal?.id || '')).filter(Boolean));
+      const removedGoalIds = [...existingGoalIds].filter(id => !nextGoalIds.has(id));
+      await saveGoals(removedGoalIds);
       renderGoalsBoard();
     }
 
     if (result.updatedTodos) {
+      const existingTodoIds = new Set(state.todos.map(todo => String(todo?.id || '')).filter(Boolean));
       state.todos = result.updatedTodos;
-      await saveTodos();
+      const nextTodoIds = new Set(state.todos.map(todo => String(todo?.id || '')).filter(Boolean));
+      const removedTodoIds = [...existingTodoIds].filter(id => !nextTodoIds.has(id));
+      await saveTodos(removedTodoIds);
       renderTodoBoard();
     }
 
@@ -1788,8 +1777,11 @@ async function handlePlanChatSubmit(event) {
   }
 
   if (result.updatedPlan) {
+    const existingPlanIds = new Set(state.plan.map(item => String(item?.id || '')).filter(Boolean));
     state.plan = result.updatedPlan;
-    await savePlan();
+    const nextPlanIds = new Set(state.plan.map(item => String(item?.id || '')).filter(Boolean));
+    const removedPlanIds = [...existingPlanIds].filter(id => !nextPlanIds.has(id));
+    await savePlan(removedPlanIds);
     renderCalendar();
     renderDayPlan();
     renderTodoBoard();
@@ -1799,14 +1791,20 @@ async function handlePlanChatSubmit(event) {
   }
 
   if (result.updatedGoals) {
+    const existingGoalIds = new Set(state.goals.map(goal => String(goal?.id || '')).filter(Boolean));
     state.goals = result.updatedGoals;
-    await saveGoals();
+    const nextGoalIds = new Set(state.goals.map(goal => String(goal?.id || '')).filter(Boolean));
+    const removedGoalIds = [...existingGoalIds].filter(id => !nextGoalIds.has(id));
+    await saveGoals(removedGoalIds);
     renderGoalsBoard();
   }
 
   if (result.updatedTodos) {
+    const existingTodoIds = new Set(state.todos.map(todo => String(todo?.id || '')).filter(Boolean));
     state.todos = result.updatedTodos;
-    await saveTodos();
+    const nextTodoIds = new Set(state.todos.map(todo => String(todo?.id || '')).filter(Boolean));
+    const removedTodoIds = [...existingTodoIds].filter(id => !nextTodoIds.has(id));
+    await saveTodos(removedTodoIds);
     renderTodoBoard();
   }
 
