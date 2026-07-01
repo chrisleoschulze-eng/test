@@ -1304,16 +1304,40 @@ function isBulkClearRequest(text) {
   return /(alle termine loeschen|alle termine löschen|kalender leeren|alles loeschen|alles löschen|clear calendar|wipe calendar)/.test(value);
 }
 
+function isPlanDeleteRequest(text) {
+  const value = String(text || '').toLowerCase();
+  if (!value) return false;
+  const deleteVerb = /(loesch|lösch|entfern|streich|delete|remove)/.test(value);
+  const planContext = /(termin|kalender|eintrag|aktivitaet|aktivität|zeitblock|event)/.test(value);
+  return deleteVerb && planContext;
+}
+
 function isBulkTodoClearRequest(text) {
   const value = String(text || '').toLowerCase();
   if (!value) return false;
   return /(alle todos loeschen|alle todos löschen|todo liste leeren|todo-liste leeren|todos leeren|clear todos|wipe todos|alle aufgaben loeschen|alle aufgaben löschen)/.test(value);
 }
 
+function isTodoDeleteRequest(text) {
+  const value = String(text || '').toLowerCase();
+  if (!value) return false;
+  const deleteVerb = /(loesch|lösch|entfern|streich|delete|remove)/.test(value);
+  const todoContext = /(todo|to do|aufgabe|aufgaben|eintrag)/.test(value);
+  return deleteVerb && todoContext;
+}
+
 function isBulkGoalClearRequest(text) {
   const value = String(text || '').toLowerCase();
   if (!value) return false;
   return /(alle ziele loeschen|alle ziele löschen|ziele leeren|goals leeren|clear goals|wipe goals)/.test(value);
+}
+
+function isGoalDeleteRequest(text) {
+  const value = String(text || '').toLowerCase();
+  if (!value) return false;
+  const deleteVerb = /(loesch|lösch|entfern|streich|delete|remove)/.test(value);
+  const goalContext = /(ziel|ziele|goal|goals)/.test(value);
+  return deleteVerb && goalContext;
 }
 
 function todoIdentityKey(item) {
@@ -1363,10 +1387,12 @@ function stabilizeUpdatedTodos(updatedTodos, currentTodos, userText) {
   const deduped = [...dedupById.values()];
 
   const clearRequested = isBulkTodoClearRequest(userText);
+  const deleteRequested = isTodoDeleteRequest(userText);
   const suspiciousPartial = !clearRequested
-    && current.length >= 4
+    && !deleteRequested
+    && current.length > 0
     && deduped.length > 0
-    && deduped.length < Math.ceil(current.length * 0.6);
+    && deduped.length < current.length;
 
   if (!suspiciousPartial) return deduped;
 
@@ -1402,10 +1428,12 @@ function stabilizeUpdatedGoals(updatedGoals, currentGoals, userText) {
   const deduped = [...dedupById.values()];
 
   const clearRequested = isBulkGoalClearRequest(userText);
+  const deleteRequested = isGoalDeleteRequest(userText);
   const suspiciousPartial = !clearRequested
-    && current.length >= 4
+    && !deleteRequested
+    && current.length > 0
     && deduped.length > 0
-    && deduped.length < Math.ceil(current.length * 0.6);
+    && deduped.length < current.length;
 
   if (!suspiciousPartial) return deduped;
 
@@ -1441,10 +1469,12 @@ function stabilizeUpdatedPlan(updatedPlan, currentPlan, userText) {
   const deduped = [...dedupById.values()];
 
   const clearRequested = isBulkClearRequest(userText);
+  const deleteRequested = isPlanDeleteRequest(userText);
   const suspiciousPartial = !clearRequested
-    && current.length >= 4
+    && !deleteRequested
+    && current.length > 0
     && deduped.length > 0
-    && deduped.length < Math.ceil(current.length * 0.6);
+    && deduped.length < current.length;
 
   if (!suspiciousPartial) return deduped;
 
@@ -1660,17 +1690,23 @@ async function askPlanAI(userText) {
     return { reply: 'Ich habe keine verwertbare Antwort bekommen. Formuliere bitte nochmal.', updatedPlan: null, conflicts: [], questions: [] };
   }
 
-  const normalizedUpdatedPlan = Array.isArray(data.updatedPlan)
-    ? stabilizeUpdatedPlan(data.updatedPlan, state.plan, userText)
-    : null;
+  let normalizedUpdatedPlan = null;
+  if (Array.isArray(data.updatedPlan)) {
+    const stabilizedPlan = stabilizeUpdatedPlan(data.updatedPlan, state.plan, userText);
+    normalizedUpdatedPlan = (stabilizedPlan.length === 0 && !isBulkClearRequest(userText)) ? null : stabilizedPlan;
+  }
 
-  const normalizedUpdatedGoals = Array.isArray(data.updatedGoals)
-    ? stabilizeUpdatedGoals(data.updatedGoals, state.goals, userText)
-    : null;
+  let normalizedUpdatedGoals = null;
+  if (Array.isArray(data.updatedGoals)) {
+    const stabilizedGoals = stabilizeUpdatedGoals(data.updatedGoals, state.goals, userText);
+    normalizedUpdatedGoals = (stabilizedGoals.length === 0 && !isBulkGoalClearRequest(userText)) ? null : stabilizedGoals;
+  }
 
-  const normalizedUpdatedTodos = Array.isArray(data.updatedTodos)
-    ? stabilizeUpdatedTodos(data.updatedTodos, state.todos, userText)
-    : null;
+  let normalizedUpdatedTodos = null;
+  if (Array.isArray(data.updatedTodos)) {
+    const stabilizedTodos = stabilizeUpdatedTodos(data.updatedTodos, state.todos, userText);
+    normalizedUpdatedTodos = (stabilizedTodos.length === 0 && !isBulkTodoClearRequest(userText)) ? null : stabilizedTodos;
+  }
 
   return {
     reply: data.reply,
@@ -1713,7 +1749,7 @@ async function handlePlanChatSubmit(event) {
       result = { reply: 'Die Verbindung zur Plan-KI ist gerade gestört. Bitte versuche es erneut.', updatedPlan: null, conflicts: [], questions: [] };
     }
 
-    if (result.updatedPlan) {
+    if (Array.isArray(result.updatedPlan)) {
       const existingPlanIds = new Set(state.plan.map(item => String(item?.id || '')).filter(Boolean));
       state.plan = result.updatedPlan;
       const nextPlanIds = new Set(state.plan.map(item => String(item?.id || '')).filter(Boolean));
@@ -1727,7 +1763,7 @@ async function handlePlanChatSubmit(event) {
       }
     }
 
-    if (result.updatedGoals) {
+    if (Array.isArray(result.updatedGoals)) {
       const existingGoalIds = new Set(state.goals.map(goal => String(goal?.id || '')).filter(Boolean));
       state.goals = result.updatedGoals;
       const nextGoalIds = new Set(state.goals.map(goal => String(goal?.id || '')).filter(Boolean));
@@ -1736,7 +1772,7 @@ async function handlePlanChatSubmit(event) {
       renderGoalsBoard();
     }
 
-    if (result.updatedTodos) {
+    if (Array.isArray(result.updatedTodos)) {
       const existingTodoIds = new Set(state.todos.map(todo => String(todo?.id || '')).filter(Boolean));
       state.todos = result.updatedTodos;
       const nextTodoIds = new Set(state.todos.map(todo => String(todo?.id || '')).filter(Boolean));
@@ -1776,7 +1812,7 @@ async function handlePlanChatSubmit(event) {
     result = { reply: 'Die Verbindung zur Plan-KI ist gerade gestört. Bitte versuche es erneut.', updatedPlan: null, conflicts: [], questions: [] };
   }
 
-  if (result.updatedPlan) {
+  if (Array.isArray(result.updatedPlan)) {
     const existingPlanIds = new Set(state.plan.map(item => String(item?.id || '')).filter(Boolean));
     state.plan = result.updatedPlan;
     const nextPlanIds = new Set(state.plan.map(item => String(item?.id || '')).filter(Boolean));
@@ -1790,7 +1826,7 @@ async function handlePlanChatSubmit(event) {
     }
   }
 
-  if (result.updatedGoals) {
+  if (Array.isArray(result.updatedGoals)) {
     const existingGoalIds = new Set(state.goals.map(goal => String(goal?.id || '')).filter(Boolean));
     state.goals = result.updatedGoals;
     const nextGoalIds = new Set(state.goals.map(goal => String(goal?.id || '')).filter(Boolean));
@@ -1799,7 +1835,7 @@ async function handlePlanChatSubmit(event) {
     renderGoalsBoard();
   }
 
-  if (result.updatedTodos) {
+  if (Array.isArray(result.updatedTodos)) {
     const existingTodoIds = new Set(state.todos.map(todo => String(todo?.id || '')).filter(Boolean));
     state.todos = result.updatedTodos;
     const nextTodoIds = new Set(state.todos.map(todo => String(todo?.id || '')).filter(Boolean));
